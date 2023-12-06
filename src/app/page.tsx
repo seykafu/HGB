@@ -1,5 +1,6 @@
 'use client';
 import Image from 'next/image'
+import { OpenAI } from 'openai';
 import { useState, useEffect, createServerContext } from "react";
 import Head from 'next/head';
 import styles from '@/styles/Home.module.css';
@@ -8,6 +9,7 @@ import { GetServerSideProps } from 'next';
 import { AppProps } from 'next/app';
 import { Inter } from 'next/font/google';
 import axios from 'axios';
+import TypingAnimation from "./components/TypingAnimation";
 
 const inter = Inter({ subsets: ['latin']})
 
@@ -32,6 +34,12 @@ export default function Home() {
       'Content-type': 'application/json',
       'Authorization': `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`
     };
+
+    const openai = new OpenAI({
+      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
+      dangerouslyAllowBrowser: true,
+    });    
+
     const data = {
       model: "gpt-4-1106-preview",
       messages: [
@@ -41,6 +49,10 @@ export default function Home() {
       ]
     };
 
+    const assistant = openai.chatCompletions.retrieve(
+      "asst_Y5kEUso72So31xUJWSp0ky5z"
+    );
+
     setIsLoading(true);
 
     axios.post(url, data, { headers: headers })
@@ -49,11 +61,19 @@ export default function Home() {
         setChatLog((prevChatLog) => [...prevChatLog, { type: 'bot', message: response.data.choices[0].message.content }]);
         setIsLoading(false);
       })
+      .then((assistant) => {
+        console.log(assistant);
+        setChatLog((prevChatLog) => [...prevChatLog, { type: 'assistant', message: response.data.choices[0].message.content }]);
+        setIsLoading(false);
+      })
       .catch((error) => {
         console.log(error);
         setIsLoading(false);
       });
   }
+
+  const [message, setMessage] = useState('');
+
 
   return (
     <div className="container mx-auto max-w-[700px]">
@@ -75,22 +95,56 @@ export default function Home() {
                 </div>
               ))
             }
+
+            {
+              isLoading &&
+              <div key={chatLog.length} className="flex justify-start">
+                <div className="bg-gray-800 rounded-lg p-4 text-white max-w-sm">
+                  <TypingAnimation />
+                </div>
+              </div>
+            }
+    
           </div>
         </div>
       </div>
-      {
+
+      {/*
         chatLog.map((message, index) => (
           <div key="index">{message.message}</div>
         ))
-      }
-      <form onSubmit={handleSubmit}>
+        */} 
+
+      
+
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        handleSubmit(message);
+        setMessage(''); // clear the message input after submit
+      }} className="flex-none p-6">
+        <div className='flex rounded-lg border border-gray-700 bg-gray-800'>
         <textarea 
-          placeholder="Type your question..." 
-          value={InputValue} 
-          onChange={(e) => setInputValue(e.target.value)} 
-          style={{ color: 'black', width: '700px', height: '100px'}}
+          className="flex-grow px-4 py-2 bg-transparent text-white focus:outline-none" 
+          placeholder='Type your question!'
+          rows={1} 
+          style={{resize: 'none', overflow: 'hidden'}}
+          value={InputValue}
+          onChange={e => setInputValue(e.target.value)}
+          onInput={e => {
+            e.target.style.height = 'auto';
+            e.target.style.height = (e.target.scrollHeight) + 'px';
+          }}
+          onKeyPress={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit(e);
+            }
+          }}
         />
-        <button type="submit">Send</button>
+        </div>
+        <button type="submit" className="bg-purple-500 rounded-lg px-4 py-2 text-white font-semibold focus:outline-none hover:bg-purple-600 transition-colors duration-300">
+          Send
+        </button>
       </form>
       <Image src="/vercel.svg" alt="Vercel Logo" width={72} height={16} />
       </div>
