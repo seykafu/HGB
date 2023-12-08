@@ -2,6 +2,7 @@
 import Image from 'next/image'
 import { OpenAI } from 'openai';
 import { useState, useEffect, createServerContext } from "react";
+import fs from 'fs';
 import Head from 'next/head';
 import styles from '@/styles/Home.module.css';
 import { useRouter } from 'next/router';
@@ -12,6 +13,19 @@ import axios from 'axios';
 import TypingAnimation from "./components/TypingAnimation";
 
 const inter = Inter({ subsets: ['latin']})
+
+//const fs = require('fs').promises;
+
+async function readFile(filePath) {
+  try {
+    const data = await fs.readFile(filePath);
+    console.log(data.toString());
+  } catch (error) {
+    console.error(`Got an error trying to read the file: ${error.message}`);
+  }
+}
+
+readFile('gcc.pdf');
 
 export default function Home() {
   const [InputValue, setInputValue] = useState<string>('')
@@ -26,7 +40,7 @@ export default function Home() {
     sendMessage(InputValue);
 
     setInputValue('');
-  }
+  };
 
   const sendMessage = (message) => {
     const url = 'https://api.openai.com/v1/chat/completions';
@@ -49,9 +63,69 @@ export default function Home() {
       ]
     };
 
-    const assistant = openai.chatCompletions.retrieve(
-      "asst_Y5kEUso72So31xUJWSp0ky5z"
-    );
+    // const assistant = openai.beta.assistants.retrieve(
+    //   "asst_Y5kEUso72So31xUJWSp0ky5z"
+    // );
+
+    try {
+      const response = fetch('/api/uploadFile', { method: 'POST' });
+      const data = response.json();
+
+    // Upload a file with an "assistants" purpose
+    const file = openai.files.create({
+      file: fs.createReadStream("gcc.pdf"),
+      purpose: "assistants",
+    });
+
+    // Create an assistant using the file ID
+    const assistant = openai.beta.assistants.create({
+      instructions: "You are a helpful assistant for Paralogue, a Copilot designed to help aspiring indie game developers get the ground running in turning their story ideas into life.",
+      model: "gpt-4-1106-preview",
+      tools: [{"type": "retrieval"}],
+      file_ids: ["file-gkou77t5ExZfu2C5WaTK2eEm"]
+    });
+
+    console.log(assistant);
+
+    // Threads
+    const thread = openai.beta.threads.create();
+
+    const assisant_message = openai.beta.threads.messages.create("thread_S9IwKhjwZya8xAaQxdO9kW4e", {
+      role: "user",
+      content: "What is the meaning of life?"
+    });
+
+    // Run assistant
+    const run = openai.beta.threads.runs.create("thread_S9IwKhjwZya8xAaQxdO9kW4e", {
+    assistant_id: "asst_Y5kEUso72So31xUJWSp0ky5z",
+    instructions: "Address the user as Kasey",
+    }); 
+
+  } catch (error) {
+    console.error(error);
+  }
+
+    // const run = openai.beta.threads.runs.retrieve(
+    //   "run_1Y5kF0s7o72So31xUJWSp0ky5z",
+    //   "thread_S9IwKhjwZya8xAaQxdO9kW4e"
+    // )
+
+    // console.log(run);
+
+    // const messages = openai.beta.threads.messages.list(
+    //   "thread_S9IwKhjwZya8xAaQxdO9kW4e"
+    // );
+
+    // messages.body.data.forEach((message) => {
+    //   console.log(message.content);
+    //   });
+
+      const logs = openai.beta.threads.runs.steps.list(
+        "thread_S9IwKhjwZya8xAaQxdO9kW4e",
+        "run_fFSwJaLcZcp6HyIhg6Mm0LiA"
+      );
+
+    console.log(logs);
 
     setIsLoading(true);
 
@@ -63,17 +137,13 @@ export default function Home() {
       })
       .then((assistant) => {
         console.log(assistant);
-        setChatLog((prevChatLog) => [...prevChatLog, { type: 'assistant', message: response.data.choices[0].message.content }]);
-        setIsLoading(false);
       })
       .catch((error) => {
         console.log(error);
         setIsLoading(false);
       });
-  }
 
-  const [message, setMessage] = useState('');
-
+    const [message, setMessage] = useState('');
 
   return (
     <div className="container mx-auto max-w-[700px]">
@@ -151,3 +221,4 @@ export default function Home() {
     </div>
   )
 }
+};
