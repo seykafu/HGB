@@ -12,22 +12,22 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { message } = body
+    // Support both 'message' (old format) and 'messages' (new format)
+    const { message, messages } = body
 
-    if (!message) {
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      )
-    }
-
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    })
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-1106-preview',
-      messages: [
+    // If messages array is provided, use it (full conversation history)
+    // Otherwise, fall back to single message format
+    let conversationMessages: Array<{ role: string; content: string }> = []
+    
+    if (messages && Array.isArray(messages)) {
+      // Use the full conversation history
+      conversationMessages = messages.map((msg: any) => ({
+        role: msg.role || 'user',
+        content: msg.content || '',
+      }))
+    } else if (message) {
+      // Legacy format: single message
+      conversationMessages = [
         {
           role: 'system',
           content:
@@ -37,8 +37,30 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: message
         }
-      ],
-      max_tokens: 500,
+      ]
+    } else {
+      return NextResponse.json(
+        { error: 'Message or messages array is required' },
+        { status: 400 }
+      )
+    }
+
+    // Ensure we have at least one message
+    if (conversationMessages.length === 0) {
+      return NextResponse.json(
+        { error: 'No messages provided' },
+        { status: 400 }
+      )
+    }
+
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: conversationMessages as any,
+      max_tokens: 1000,
     })
 
     return NextResponse.json({
@@ -61,4 +83,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-

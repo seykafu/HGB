@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.46.3",
+    "@supabase/supabase-js": "^2.79.0",
     "axios": "^1.7.7",
     "next": "^15.1.0",
     "openai": "^4.67.0",

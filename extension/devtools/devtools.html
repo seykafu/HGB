@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Paralogue DevTools</title>
+</head>
+<body>
+  <div id="devtools-root">DevTools initialized</div>
+  <script>
+    // DevTools panel will be created by panel.ts
+    chrome.devtools.panels.create(
+      'NPC Copilot',
+      '/assets/mascot-NkR2-PYp.png',
+      'devtools/panel.html',
+      function(panel) {
+        console.log('Paralogue DevTools panel created')
+      }
+    )
+  </script>
+</body>
+</html>
