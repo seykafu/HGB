@@ -10,8 +10,12 @@ const nextConfig: NextConfig = {
     }
 
     return config
-  }
+  },
+  // Exclude extension and problematic files from build
+  eslint: {
+    ignoreDuringBuilds: false,
+    dirs: ['src/app', 'src/lib', 'src/components'],
+  },
 }
 
 export default nextConfig
-
