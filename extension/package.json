@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node -e \"const fs=require('fs');const path=require('path');const css=fs.readdirSync('dist/assets').find(f=>f.startsWith('inject-')&&f.endsWith('.css'));if(css)fs.copyFileSync(path.join('dist/assets',css),'dist/inject/index.css');\"",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "package": "./package-store.sh",
+    "package:windows": "npm run build && cd dist && powershell Compress-Archive -Path * -DestinationPath ../paralogue-extension.zip -Force"
   },
   "dependencies": {
     "react": "^18.3.1",

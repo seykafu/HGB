@@ -134,7 +134,7 @@ export async function callWithTools(
       },
     })
   } catch (error) {
-    console.error('Paralogue: Tool calling error:', error)
+    console.error('GameNPC: Tool calling error:', error)
     throw error
   }
 }

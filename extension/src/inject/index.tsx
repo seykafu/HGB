@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './index.css'
 
-const container = document.getElementById('paralogue-mount')
+const container = document.getElementById('gamenpc-mount')
 if (container) {
   const root = createRoot(container)
   root.render(

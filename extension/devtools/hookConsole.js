@@ -2,15 +2,15 @@
 // This is injected into the page context
 
 (function() {
-  if (window.__PARALOGUE_CONSOLE_HOOKED) return
-  window.__PARALOGUE_CONSOLE_HOOKED = true
+  if (window.__GAMENPC_CONSOLE_HOOKED) return
+  window.__GAMENPC_CONSOLE_HOOKED = true
 
   const send = (type, payload) => {
     try {
       // Send to content script via postMessage
-      window.postMessage({ source: 'PARALOGUE_DEVTOOLS', type, payload }, '*')
+      window.postMessage({ source: 'GAMENPC_DEVTOOLS', type, payload }, '*')
     } catch (e) {
-      console.error('Paralogue: Failed to send devtools message', e)
+      console.error('GameNPC: Failed to send devtools message', e)
     }
   }
 
@@ -60,6 +60,6 @@
     })
   })
 
-  console.log('Paralogue: Console hook installed')
+  console.log('GameNPC: Console hook installed')
 })()
 

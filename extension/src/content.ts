@@ -6,10 +6,10 @@ function injectConsoleHook() {
   const script = document.createElement('script')
   script.textContent = `
     (function() {
-      if (window.__PARALOGUE_CONSOLE_HOOKED) return
-      window.__PARALOGUE_CONSOLE_HOOKED = true
+      if (window.__GAMENPC_CONSOLE_HOOKED) return
+      window.__GAMENPC_CONSOLE_HOOKED = true
       const send = (type, payload) => {
-        window.postMessage({ source: 'PARALOGUE_DEVTOOLS', type, payload }, '*')
+        window.postMessage({ source: 'GAMENPC_DEVTOOLS', type, payload }, '*')
       }
       const orig = { log: console.log, error: console.error, warn: console.warn, info: console.info }
       ['log', 'warn', 'error', 'info'].forEach(k => {
@@ -28,7 +28,7 @@ function injectConsoleHook() {
 
 // Listen for devtools messages from page
 window.addEventListener('message', (ev) => {
-  if (ev.data?.source === 'PARALOGUE_DEVTOOLS') {
+  if (ev.data?.source === 'GAMENPC_DEVTOOLS') {
     // Forward to background/service worker
     chrome.runtime.sendMessage({
       type: ev.data.type,
@@ -43,7 +43,7 @@ function ensurePanel() {
   if (root) return
 
   const container = document.createElement('div')
-  container.id = 'paralogue-root'
+  container.id = 'gamenpc-root'
   container.style.position = 'fixed'
   container.style.top = '0'
   container.style.left = '0'
@@ -51,13 +51,13 @@ function ensurePanel() {
   container.style.height = '100%'
   container.style.pointerEvents = 'none'
   container.style.zIndex = '999999'
-  container.setAttribute('data-paralogue', 'true')
+  container.setAttribute('data-gamenpc', 'true')
 
   const shadow = container.attachShadow({ mode: 'open' })
   document.documentElement.appendChild(container)
 
   const mount = document.createElement('div')
-  mount.id = 'paralogue-mount'
+  mount.id = 'gamenpc-mount'
   mount.style.width = '100%'
   mount.style.height = '100%'
   shadow.appendChild(mount)
@@ -67,10 +67,10 @@ function ensurePanel() {
   styleLink.rel = 'stylesheet'
   styleLink.href = chrome.runtime.getURL('inject/index.css')
   styleLink.onerror = () => {
-    console.error('Paralogue: Failed to load CSS from inject/index.css')
+    console.error('GameNPC: Failed to load CSS from inject/index.css')
   }
   styleLink.onload = () => {
-    console.log('Paralogue: CSS loaded successfully')
+    console.log('GameNPC: CSS loaded successfully')
   }
   shadow.appendChild(styleLink)
 
@@ -79,33 +79,33 @@ function ensurePanel() {
   script.type = 'module'
   script.src = chrome.runtime.getURL('inject/index.js')
   script.onerror = () => {
-    console.error('Paralogue: Failed to load script')
+    console.error('GameNPC: Failed to load script')
   }
   script.onload = () => {
-    console.log('Paralogue: Script loaded successfully')
+    console.log('GameNPC: Script loaded successfully')
   }
   shadow.appendChild(script)
 
   root = shadow
-  console.log('Paralogue: Panel mounted')
+  console.log('GameNPC: Panel mounted')
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type === 'PARALOGUE_TOGGLE') {
+  if (msg?.type === 'GAMENPC_TOGGLE') {
     if (!root) ensurePanel()
     panelVisible = !panelVisible
-    const container = document.getElementById('paralogue-root')
+    const container = document.getElementById('gamenpc-root')
     if (container) {
       container.style.display = panelVisible ? 'block' : 'none'
     }
     sendResponse({ visible: panelVisible })
-  } else if (msg?.type === 'PARALOGUE_STATUS') {
+  } else if (msg?.type === 'GAMENPC_STATUS') {
     sendResponse({ visible: panelVisible })
-  } else if (msg?.type === 'PARALOGUE_QUICK_ASK') {
+  } else if (msg?.type === 'GAMENPC_QUICK_ASK') {
     // Forward quick ask to injected app
     if (root) {
       root.dispatchEvent(
-        new CustomEvent('paralogue-quick-ask', { detail: { message: msg.message } })
+        new CustomEvent('gamenpc-quick-ask', { detail: { message: msg.message } })
       )
     }
   }
@@ -129,10 +129,10 @@ if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
 
 // Relay actions to page via postMessage
 window.addEventListener('message', (ev) => {
-  if (ev.data?.source === 'PARALOGUE') {
+  if (ev.data?.source === 'GAMENPC') {
     // Dispatch to page context
     window.dispatchEvent(
-      new CustomEvent('paralogue:npc', {
+      new CustomEvent('gamenpc:npc', {
         detail: ev.data,
       })
     )

@@ -2,9 +2,9 @@ import { initializeDocsIndex } from './tools/docsIndex'
 
 // Initialize docs index on install
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log('Paralogue: Initializing...')
+  console.log('GameNPC: Initializing...')
   await initializeDocsIndex()
-  console.log('Paralogue: Docs index initialized')
+  console.log('GameNPC: Docs index initialized')
 })
 
 // Listen for devtools messages
@@ -16,10 +16,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   
   // Context menu for quick toggle
-  if (msg?.type === 'PARALOGUE_TOGGLE') {
+  if (msg?.type === 'GAMENPC_TOGGLE') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'PARALOGUE_TOGGLE' })
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'GAMENPC_TOGGLE' })
       }
     })
   }
@@ -29,14 +29,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // Create context menu
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
-    id: 'paralogue-toggle',
-    title: 'Toggle Paralogue Panel',
+    id: 'gamenpc-toggle',
+    title: 'Toggle GameNPC Panel',
     contexts: ['page'],
   })
 })
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'paralogue-toggle' && tab?.id) {
-    chrome.tabs.sendMessage(tab.id, { type: 'PARALOGUE_TOGGLE' })
+  if (info.menuItemId === 'gamenpc-toggle' && tab?.id) {
+    chrome.tabs.sendMessage(tab.id, { type: 'GAMENPC_TOGGLE' })
   }
 })

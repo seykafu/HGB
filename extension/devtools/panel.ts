@@ -1,4 +1,4 @@
-// DevTools panel for Paralogue NPC Copilot
+// DevTools panel for GameNPC NPC Copilot
 // This runs in the DevTools context
 
 chrome.devtools.panels.create(
@@ -6,7 +6,7 @@ chrome.devtools.panels.create(
   '/assets/mascot.png',
   'devtools/panel.html',
   (panel) => {
-    console.log('Paralogue DevTools panel created')
+    console.log('GameNPC DevTools panel created')
   }
 )
 

@@ -10,7 +10,7 @@ export async function sendGameAction(input: GameActionInput): Promise<ToolResult
     // Send via postMessage to page
     window.postMessage(
       {
-        source: 'PARALOGUE',
+        source: 'GAMENPC',
         action,
       },
       '*'

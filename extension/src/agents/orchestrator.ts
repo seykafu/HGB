@@ -49,12 +49,12 @@ export async function orchestrate(
   const isDocQuestion = /(how|what|where|when|why|documentation|api|unity|unreal|frostbite|guide|tutorial|help|learn)/i.test(userText)
   
   if (!key || backendMode === 'proxy') {
-    console.log('Paralogue: Using fallback mode (no tool calling)')
+    console.log('GameNPC: Using fallback mode (no tool calling)')
     
     // If it's a documentation question, try to use searchDocs directly
     if (isDocQuestion) {
       try {
-        console.log('Paralogue: Detected doc question, using searchDocs directly')
+        console.log('GameNPC: Detected doc question, using searchDocs directly')
         // Infer engine from query
         let engine: 'unity' | 'unreal' | 'frostbite' | 'auto' = 'auto'
         if (/unity/i.test(userText)) engine = 'unity'
@@ -82,7 +82,7 @@ export async function orchestrate(
           return { stream, citations }
         }
       } catch (error) {
-        console.warn('Paralogue: Direct searchDocs failed, falling back to regular mode:', error)
+        console.warn('GameNPC: Direct searchDocs failed, falling back to regular mode:', error)
       }
     }
     
@@ -160,7 +160,7 @@ export async function orchestrate(
     }
   } catch (error) {
     // If tool calling fails, fallback to regular streaming
-    console.warn('Paralogue: Tool calling failed, falling back to regular mode:', error)
+    console.warn('GameNPC: Tool calling failed, falling back to regular mode:', error)
     const fallbackMessages: ChatMessage[] = [
       { role: 'system', content: FALLBACK_SYSTEM_PROMPT },
       ...conversationHistory,
@@ -295,7 +295,7 @@ async function callWithToolsWithCitations(
       },
     })
   } catch (error) {
-    console.error('Paralogue: Tool calling error:', error)
+    console.error('GameNPC: Tool calling error:', error)
     throw error
   }
 }

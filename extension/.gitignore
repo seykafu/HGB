@@ -1,5 +1,29 @@
-node_modules
-dist
-.DS_Store
-*.log
+# Dependencies
+node_modules/
 
+# Build outputs
+dist/
+*.zip
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+.cache/

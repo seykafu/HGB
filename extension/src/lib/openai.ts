@@ -12,7 +12,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
 
     if (mode === 'proxy') {
       const url = await get<string>('proxyUrl', 'http://localhost:3000/api/chat')
-      console.log('Paralogue: Calling proxy API:', url, 'with messages:', messages.length)
+      console.log('GameNPC: Calling proxy API:', url, 'with messages:', messages.length)
       
       try {
         const res = await fetch(url, {
@@ -26,16 +26,16 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
         const responseText = await res.text()
         
         if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html') || contentType.includes('text/html')) {
-          console.error('Paralogue: Received HTML instead of JSON. This usually means the API requires authentication.')
+          console.error('GameNPC: Received HTML instead of JSON. This usually means the API requires authentication.')
           throw new Error('API requires authentication. Please use "Direct OpenAI" mode in Options, or ensure your Next.js API route allows unauthenticated access.')
         }
 
         if (!res.ok) {
-          console.error('Paralogue: Proxy error:', res.status, responseText.substring(0, 200))
+          console.error('GameNPC: Proxy error:', res.status, responseText.substring(0, 200))
           throw new Error(`Proxy error: ${res.status} ${res.statusText}`)
         }
 
-        console.log('Paralogue: Response content-type:', contentType)
+        console.log('GameNPC: Response content-type:', contentType)
         
         // Check if response is streaming
         if (contentType.includes('text/event-stream') || contentType.includes('text/stream')) {
@@ -76,7 +76,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
           })
         } catch (parseError) {
           // If it's not JSON, treat the whole response as text
-          console.log('Paralogue: Response is plain text, treating as message:', responseText.substring(0, 100))
+          console.log('GameNPC: Response is plain text, treating as message:', responseText.substring(0, 100))
           return new ReadableStream({
             start(controller) {
               const encoder = new TextEncoder()
@@ -89,13 +89,13 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
         }
       } catch (fetchError) {
         // If proxy fails, suggest using Direct OpenAI mode
-        console.error('Paralogue: Proxy fetch error:', fetchError)
+        console.error('GameNPC: Proxy fetch error:', fetchError)
         const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError)
         
         // Check if user has OpenAI key configured for fallback
         const key = await get<string>('openaiKey', '')
         if (key) {
-          console.log('Paralogue: Proxy failed, falling back to Direct OpenAI mode')
+          console.log('GameNPC: Proxy failed, falling back to Direct OpenAI mode')
           // Fall through to Direct OpenAI mode
         } else {
           throw new Error(`${errorMessage}\n\nTip: Go to Options and switch to "Direct OpenAI" mode, or configure your proxy URL correctly.`)
@@ -110,7 +110,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
     }
 
     const model = await get<string>('model', 'gpt-4o-mini')
-    console.log('Paralogue: Calling OpenAI API directly with model:', model)
+    console.log('GameNPC: Calling OpenAI API directly with model:', model)
     
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -127,7 +127,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
 
     if (!res.ok) {
       const errorText = await res.text()
-      console.error('Paralogue: OpenAI error:', res.status, errorText)
+      console.error('GameNPC: OpenAI error:', res.status, errorText)
       let errorMessage = `OpenAI error: ${res.status} ${res.statusText}`
       try {
         const errorData = JSON.parse(errorText)
@@ -140,7 +140,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
 
     return res.body
   } catch (error) {
-    console.error('Paralogue: Stream error:', error)
+    console.error('GameNPC: Stream error:', error)
     // Re-throw with more context
     if (error instanceof Error) {
       throw error

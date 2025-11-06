@@ -2,9 +2,9 @@ import { defineManifest } from '@crxjs/vite-plugin'
 
 export default defineManifest({
   manifest_version: 3,
-  name: 'Paralogue NPC Copilot',
+  name: 'GameNPC NPC Copilot',
   version: '0.1.0',
-  description: 'Cute overlay to design LLM NPC agents for localhost games.',
+  description: 'GameNPC: AI Gaming Copilot - Multi-agent AI system for indie game developers to design and control NPC agents.',
   action: { default_popup: 'src/ui/Popup.html' },
   options_page: 'src/ui/Options.html',
   devtools_page: 'devtools/devtools.html',

@@ -65,7 +65,7 @@ const Popup = () => {
       if (tabs[0]?.id) {
         chrome.tabs.sendMessage(
           tabs[0].id,
-          { type: 'PARALOGUE_STATUS' },
+          { type: 'GAMENPC_STATUS' },
           (response) => {
             if (chrome.runtime.lastError) {
               setIsVisible(false)
@@ -97,10 +97,10 @@ const Popup = () => {
       if (tabs[0]?.id) {
         chrome.tabs.sendMessage(
           tabs[0].id,
-          { type: 'PARALOGUE_TOGGLE' },
+          { type: 'GAMENPC_TOGGLE' },
           (response) => {
             if (chrome.runtime.lastError) {
-              console.log('Paralogue: Could not toggle panel (not on localhost)')
+              console.log('GameNPC: Could not toggle panel (not on localhost)')
             } else {
               setIsVisible(response?.visible || false)
             }
@@ -198,7 +198,7 @@ const Popup = () => {
               <Sparkle className="absolute -bottom-1 right-0 h-3 w-3 text-[#E9C46A] animate-pulseSoft delay-100" />
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="font-display text-xl tracking-tight text-[#2E2A25]">GAMING COPILOT</h1>
+              <h1 className="font-display text-xl tracking-tight text-[#2E2A25]">GameNPC: AI Gaming Copilot</h1>
               <p className="text-xs text-[#2E2A25]/70">A copilot for indie game developers</p>
             </div>
           </div>

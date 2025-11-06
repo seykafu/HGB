@@ -20,7 +20,7 @@ public class NPCController : MonoBehaviour
     void Start()
     {
         agent = GetComponent<NavMeshAgent>();
-        // Listen for Paralogue actions
+        // Listen for GameNPC actions
         StartCoroutine(ListenForActions());
     }
     
@@ -71,7 +71,7 @@ public:
         '2. Set up NavMesh bounds volume',
         '3. Create Behavior Tree for NPC wandering',
         '4. Implement WebSocket or HTTP listener',
-        '5. Connect to Paralogue actions',
+        '5. Connect to GameNPC actions',
       ]
     } else {
       code = `// ${framework} integration guide
@@ -80,13 +80,13 @@ public:
 1. Set up NPC entity/spawn system
 2. Configure navigation mesh or pathfinding
 3. Create dialogue/UI system
-4. Connect to Paralogue via WebSocket or HTTP
-5. Parse and execute actions from Paralogue`
+4. Connect to GameNPC via WebSocket or HTTP
+5. Parse and execute actions from GameNPC`
       checklist = [
         '1. Review engine documentation',
         '2. Set up NPC entity system',
         '3. Implement communication bridge',
-        '4. Test with Paralogue extension',
+        '4. Test with GameNPC extension',
       ]
     }
 

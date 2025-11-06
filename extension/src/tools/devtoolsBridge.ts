@@ -40,7 +40,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
 // Also listen in content script context (for window.postMessage)
 if (typeof window !== 'undefined') {
   window.addEventListener('message', (ev) => {
-    if (ev.data?.source === 'PARALOGUE_DEVTOOLS') {
+    if (ev.data?.source === 'GAMENPC_DEVTOOLS') {
       const entry: LogEntry = {
         time: Date.now(),
         level: ev.data.type.includes('ERROR') ? 'error' : 

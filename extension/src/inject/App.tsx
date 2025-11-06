@@ -38,19 +38,19 @@ const App = () => {
     }
     
     // Listen in Shadow DOM
-    window.addEventListener('paralogue-quick-ask', handleQuickAsk as EventListener)
+    window.addEventListener('gamenpc-quick-ask', handleQuickAsk as EventListener)
     
     // Keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        const root = document.getElementById('paralogue-root')
+        const root = document.getElementById('gamenpc-root')
         if (root) root.style.display = 'none'
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     
     return () => {
-      window.removeEventListener('paralogue-quick-ask', handleQuickAsk as EventListener)
+      window.removeEventListener('gamenpc-quick-ask', handleQuickAsk as EventListener)
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [])
@@ -112,7 +112,7 @@ const App = () => {
     if (postMessageEnabled) {
       window.postMessage(
         {
-          source: 'PARALOGUE',
+          source: 'GAMENPC',
           npcId: currentNpc?.id,
           action,
         },
