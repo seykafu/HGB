@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Light Theme */
+  --bg: #FBF7EF; /* Parchment White */
+  --bg-muted: #F8F1E3; /* Lighter Parchment */
+  --card: #FBF7EF;
+  --stroke: #533F31; /* Bark Brown */
+  --text: #2E2A25; /* Ink Black */
+  --accent: #E9C46A; /* Gold */
+  --accent-dk: #D4AF37; /* Darker Gold */
+  --shadow: rgba(46,42,37,0.2); /* Ink Shadow */
+}
+
+.dark {
+  /* Dark Theme */
+  --bg: #2E2A25; /* Ink Black */
+  --bg-muted: #3A352F; /* Darker Ink */
+  --card: #2E2A25;
+  --stroke: #E9C46A; /* Gold */
+  --text: #FBF7EF; /* Parchment White */
+  --accent: #E9C46A; /* Gold */
+  --accent-dk: #D4AF37; /* Darker Gold */
+  --shadow: rgba(233,196,106,0.1); /* Gold Shadow */
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-muted);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--stroke);
+  border-radius: 10px;
+  border: 2px solid var(--bg-muted);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-dk);
+}
+

@@ -11,6 +11,7 @@ import { Button } from '../../ui/components/Button'
 import { Textarea } from '../../ui/components/Input'
 import { Mascot } from '../../ui/mascot/Mascot'
 import { sendGameAction } from '../../tools/gameBridge'
+import { get, set } from '../../lib/storage'
 
 interface ChatProps {
   currentNpc: NpcProfile | null
@@ -19,23 +20,110 @@ interface ChatProps {
   onQuickAskProcessed?: () => void
 }
 
-interface ToolCallChip {
-  tool: string
-  args: any
-  timestamp: number
+interface ChatSession {
+  id: string
+  name: string
+  messages: ChatMessage[]
+  createdAt: number
 }
 
+const MAX_MESSAGES_PER_CHAT = 10
+const MAX_CHATS = 3
+
 export const Chat = ({ currentNpc, onAction, quickAsk, onQuickAskProcessed }: ChatProps) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [chats, setChats] = useState<ChatSession[]>([])
+  const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [toolCalls, setToolCalls] = useState<ToolCallChip[]>([])
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const activeChat = chats.find(c => c.id === activeChatId) || chats[0]
+
+  useEffect(() => {
+    loadChats()
+  }, [])
+
+  // Save chats whenever they change
+  useEffect(() => {
+    if (chats.length > 0) {
+      saveChats(chats)
+    }
+  }, [chats])
+
+  const loadChats = async () => {
+    const saved = await get<ChatSession[]>('injectChats', [])
+    if (saved.length > 0) {
+      setChats(saved)
+      setActiveChatId(saved[0].id)
+    } else {
+      // Create first chat
+      const newChat: ChatSession = {
+        id: crypto.randomUUID(),
+        name: 'Chat 1',
+        messages: [],
+        createdAt: Date.now(),
+      }
+      setChats([newChat])
+      setActiveChatId(newChat.id)
+    }
+  }
+
+  const saveChats = async (chatSessions: ChatSession[]) => {
+    await set('injectChats', chatSessions)
+  }
+
+  const createNewChat = () => {
+    if (chats.length >= MAX_CHATS) {
+      alert(`Maximum of ${MAX_CHATS} chats allowed. Please delete one first.`)
+      return
+    }
+
+    const newChat: ChatSession = {
+      id: crypto.randomUUID(),
+      name: `Chat ${chats.length + 1}`,
+      messages: [],
+      createdAt: Date.now(),
+    }
+    setChats([...chats, newChat])
+    setActiveChatId(newChat.id)
+    setInput('')
+  }
+
+  const deleteChat = (chatId: string) => {
+    const updated = chats.filter(c => c.id !== chatId)
+    if (updated.length === 0) {
+      // Create a new chat if all are deleted
+      const newChat: ChatSession = {
+        id: crypto.randomUUID(),
+        name: 'Chat 1',
+        messages: [],
+        createdAt: Date.now(),
+      }
+      setChats([newChat])
+      setActiveChatId(newChat.id)
+    } else {
+      setChats(updated)
+      if (activeChatId === chatId) {
+        setActiveChatId(updated[0].id)
+      }
+    }
+    setInput('')
+  }
+
+  const resetChat = (chatId: string) => {
+    setChats(chats.map(c => 
+      c.id === chatId 
+        ? { ...c, messages: [] }
+        : c
+    ))
+    setInput('')
+  }
+
   // Handle quick ask from popup
   useEffect(() => {
-    if (quickAsk && currentNpc) {
+    if (quickAsk && currentNpc && activeChat) {
       setInput(quickAsk)
       setTimeout(() => {
         handleSendMessage(quickAsk)
@@ -44,11 +132,11 @@ export const Chat = ({ currentNpc, onAction, quickAsk, onQuickAskProcessed }: Ch
         }
       }, 100)
     }
-  }, [quickAsk])
+  }, [quickAsk, activeChat])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isLoading, toolCalls])
+  }, [activeChat?.messages, isLoading, statusMessage])
 
   // Auto-expand textarea
   useEffect(() => {
@@ -61,48 +149,82 @@ export const Chat = ({ currentNpc, onAction, quickAsk, onQuickAskProcessed }: Ch
 
   const handleSendMessage = async (messageText?: string) => {
     const messageToSend = messageText || input.trim()
-    if (!messageToSend || !currentNpc || isLoading) return
+    if (!messageToSend || !currentNpc || isLoading || !activeChat) return
+
+    // Check message limit
+    const userMessageCount = activeChat.messages.filter(m => m.role === 'user').length
+    if (userMessageCount >= MAX_MESSAGES_PER_CHAT) {
+      return // Should show limit message
+    }
 
     const userMessage: ChatMessage = { role: 'user', content: messageToSend }
     setInput('')
     setIsLoading(true)
-    setToolCalls([])
+    setStatusMessage(null)
 
     // Add user message immediately
-    setMessages((prev) => [...prev, userMessage])
+    setChats(prev => {
+      const updated = prev.map(c => 
+        c.id === activeChat.id
+          ? { ...c, messages: [...c.messages, userMessage] }
+          : c
+      )
+      saveChats(updated)
+      return updated
+    })
 
     try {
-      // Use orchestrator with tool calling
-      const conversationHistory = messages
-      const result = await orchestrate(messageToSend, conversationHistory)
+      // Use orchestrator with tool calling and status updates
+      const conversationHistory = activeChat.messages
+      const result = await orchestrate(messageToSend, conversationHistory, (status) => {
+        setStatusMessage(status)
+      })
       
       if (!result.stream) {
         throw new Error('Failed to get stream')
       }
 
       // Add empty assistant message with citations
-      setMessages((prev) => [...prev, { 
-        role: 'assistant', 
-        content: '',
-        citations: result.citations
-      }])
+      setChats(prev => {
+        const updated = prev.map(c => 
+          c.id === activeChat.id
+            ? { ...c, messages: [...c.messages, { 
+                role: 'assistant', 
+                content: '',
+                citations: result.citations
+              }] }
+            : c
+        )
+        saveChats(updated)
+        return updated
+      })
 
       let fullResponse = ''
       for await (const chunk of readStream(result.stream)) {
         fullResponse += chunk
         // Update the last message (assistant message) with streaming content
-        setMessages((prev) => {
-          const newMsgs = [...prev]
-          const lastMsg = newMsgs[newMsgs.length - 1]
-          if (lastMsg.role === 'assistant') {
-            newMsgs[newMsgs.length - 1] = { 
-              ...lastMsg,
-              content: fullResponse 
+        setChats(prev => {
+          const updated = prev.map(c => {
+            if (c.id === activeChat.id) {
+              const newMsgs = [...c.messages]
+              const lastMsg = newMsgs[newMsgs.length - 1]
+              if (lastMsg.role === 'assistant') {
+                newMsgs[newMsgs.length - 1] = { 
+                  ...lastMsg,
+                  content: fullResponse 
+                }
+              }
+              return { ...c, messages: newMsgs }
             }
-          }
-          return newMsgs
+            return c
+          })
+          saveChats(updated)
+          return updated
         })
       }
+
+      // Clear status when done
+      setStatusMessage(null)
 
       // Check if response contains game actions and emit them
       const actionRegex = /<<<ACTION\s+type="([^"]+)"(?:\s+([^>]+))?>>>/g
@@ -135,9 +257,22 @@ export const Chat = ({ currentNpc, onAction, quickAsk, onQuickAskProcessed }: Ch
       }
     } catch (error) {
       console.error('Chat error:', error)
-      setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}` }])
+      setStatusMessage(null)
+      setChats(prev => {
+        const updated = prev.map(c => 
+          c.id === activeChat.id
+            ? { ...c, messages: [...c.messages, { 
+                role: 'assistant', 
+                content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}` 
+              }] }
+            : c
+        )
+        saveChats(updated)
+        return updated
+      })
     } finally {
       setIsLoading(false)
+      setStatusMessage(null)
     }
   }
 
@@ -152,25 +287,80 @@ export const Chat = ({ currentNpc, onAction, quickAsk, onQuickAskProcessed }: Ch
     }
   }
 
+  const userMessageCount = activeChat?.messages.filter(m => m.role === 'user').length || 0
+  const isAtLimit = userMessageCount >= MAX_MESSAGES_PER_CHAT
+
   return (
     <div className="flex flex-col h-full bg-[#F8F1E3]">
-      {messages.length === 0 && (
-        <div className="p-4 border-b border-[#533F31]/20 bg-[#FBF7EF]">
-          <div className="flex items-start gap-3">
-            <Mascot className="h-8 w-8 flex-shrink-0" />
-            <div className="flex-1">
+      {/* Chat Tabs */}
+      <div className="p-3 border-b border-[#533F31]/20 bg-[#FBF7EF]">
+        <div className="flex gap-2 items-center">
+          {chats.map((chat) => (
+            <button
+              key={chat.id}
+              onClick={() => setActiveChatId(chat.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                activeChatId === chat.id
+                  ? 'bg-[#E9C46A] text-[#2E2A25] ring-1 ring-[#533F31]'
+                  : 'bg-[#F8F1E3] text-[#2E2A25]/70 hover:bg-[#F0E4CC] ring-1 ring-[#533F31]/20'
+              }`}
+            >
+              {chat.name}
+            </button>
+          ))}
+          {chats.length < MAX_CHATS && (
+            <button
+              onClick={createNewChat}
+              className="px-2 py-1.5 rounded-lg text-xs bg-[#F8F1E3] text-[#533F31] hover:bg-[#F0E4CC] ring-1 ring-[#533F31]/20"
+              title="New Chat"
+            >
+              +
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {!activeChat || activeChat.messages.length === 0 ? (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <Mascot className="h-8 w-8 flex-shrink-0" />
               <Bubble from="npc">
                 {currentNpc 
                   ? `Greetings! How can I assist you with NPC agents today? I can help with documentation, code generation, debugging, and game actions.`
                   : `Please create an NPC first in the NPCs tab.`}
               </Bubble>
             </div>
+            
+            {currentNpc && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-[#533F31] px-2">Try these example prompts:</p>
+                <div className="flex flex-col gap-2">
+                  {[
+                    "How do I publish my game to multiple platforms?",
+                    "How do I run an AI-based NPC agent in my game?",
+                    "How do I get started?"
+                  ].map((prompt, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setInput(prompt)
+                        setTimeout(() => {
+                          handleSendMessage(prompt)
+                        }, 100)
+                      }}
+                      className="text-left px-4 py-2.5 rounded-lg bg-[#FBF7EF] hover:bg-[#F0E4CC] ring-1 ring-[#533F31]/20 hover:ring-[#533F31]/40 transition text-sm text-[#2E2A25] group"
+                    >
+                      <span className="group-hover:text-[#533F31]">{prompt}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((msg, i) => (
+        ) : (
+          <>
+            {activeChat.messages.map((msg, i) => (
           <div key={i} className="flex flex-col gap-1">
             <Bubble from={msg.role === 'user' ? 'you' : 'npc'}>
               {msg.role === 'user' ? (
@@ -187,26 +377,45 @@ export const Chat = ({ currentNpc, onAction, quickAsk, onQuickAskProcessed }: Ch
           </div>
         ))}
 
-        {/* Tool call chips */}
-        {toolCalls.map((toolCall, i) => (
-          <div key={i} className="flex justify-start">
-            <div className="px-3 py-1.5 rounded-lg bg-[#E9C46A]/40 ring-1 ring-[#533F31]/20 text-xs text-[#2E2A25]">
-              🔧 TOOL: <span className="font-semibold">{toolCall.tool}</span>
-              {toolCall.args && Object.keys(toolCall.args).length > 0 && (
-                <span className="ml-1 opacity-70">
-                  ({Object.keys(toolCall.args).join(', ')})
-                </span>
-              )}
+        {/* Status message */}
+        {statusMessage && (
+          <div className="flex justify-start">
+            <div className="px-3 py-2 rounded-lg bg-[#E9C46A]/40 ring-1 ring-[#533F31]/20 text-sm text-[#2E2A25]">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-[#533F31] animate-pulse"></div>
+                <span>{statusMessage}</span>
+              </div>
             </div>
           </div>
-        ))}
+        )}
 
-        {isLoading && (
-          <div className="flex justify-start">
-            <Bubble from="npc">
-              <TypingAnimation />
-            </Bubble>
+        {/* Message limit warning */}
+        {isAtLimit && activeChat && (
+          <div className="p-4 rounded-lg bg-[#C86B6B]/20 ring-2 ring-[#C86B6B] border border-[#C86B6B]/40">
+            <p className="text-sm font-medium text-[#2E2A25] mb-2">
+              Chat limit reached ({MAX_MESSAGES_PER_CHAT} messages)
+            </p>
+            <p className="text-xs text-[#2E2A25]/70 mb-3">
+              Please reset this chat to continue the conversation.
+            </p>
+            <Button
+              onClick={() => resetChat(activeChat.id)}
+              variant="danger"
+              className="w-full text-xs"
+            >
+              Delete and Continue
+            </Button>
           </div>
+        )}
+
+            {isLoading && !statusMessage && (
+              <div className="flex justify-start">
+                <Bubble from="npc">
+                  <TypingAnimation />
+                </Bubble>
+              </div>
+            )}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -219,14 +428,18 @@ export const Chat = ({ currentNpc, onAction, quickAsk, onQuickAskProcessed }: Ch
               value={input}
               onChange={handleChange}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey && !isAtLimit) {
                   e.preventDefault()
                   handleSend()
                 }
               }}
               className="min-h-[60px] max-h-[120px] overflow-y-auto"
-              placeholder={currentNpc ? "Type a message..." : "Create an NPC first..."}
-              disabled={!currentNpc || isLoading}
+              placeholder={isAtLimit 
+                ? "Chat limit reached. Reset to continue." 
+                : currentNpc 
+                  ? "Type a message..." 
+                  : "Create an NPC first..."}
+              disabled={!currentNpc || isLoading || isAtLimit}
               rows={1}
             />
             <div className="flex justify-end mt-1">
@@ -237,7 +450,7 @@ export const Chat = ({ currentNpc, onAction, quickAsk, onQuickAskProcessed }: Ch
           </div>
           <Button
             onClick={handleSend}
-            disabled={!currentNpc || isLoading || !input.trim()}
+            disabled={!currentNpc || isLoading || !input.trim() || isAtLimit}
             className="px-4 py-2 min-w-[80px] shrink-0"
           >
             Send

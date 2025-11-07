@@ -21,6 +21,17 @@ export interface DevtoolsQueryInput {
   filter?: string
 }
 
+export interface PageManipulationInput {
+  action: 'click' | 'type' | 'select' | 'scroll' | 'highlight' | 'inject' | 'modify'
+  selector?: string
+  text?: string
+  value?: string
+  html?: string
+  css?: string
+  x?: number
+  y?: number
+}
+
 export interface ToolResult {
   ok: boolean
   data?: any
@@ -126,5 +137,47 @@ export const TOOL_SCHEMAS = {
       required: ['kind'],
     },
   },
+  manipulatePage: {
+    name: 'manipulatePage',
+    description: 'Interact with and modify the current browser page. Use this when the user asks to click buttons, fill forms, highlight elements, scroll, or modify page content. This allows the AI to directly interact with web pages.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['click', 'type', 'select', 'scroll', 'highlight', 'inject', 'modify'],
+          description: 'The action to perform on the page',
+        },
+        selector: {
+          type: 'string',
+          description: 'CSS selector for the target element (required for click, type, select, highlight, modify)',
+        },
+        text: {
+          type: 'string',
+          description: 'Text to type or set (for type and modify actions)',
+        },
+        value: {
+          type: 'string',
+          description: 'Value to select (for select action)',
+        },
+        html: {
+          type: 'string',
+          description: 'HTML content to inject or modify (for inject and modify actions)',
+        },
+        css: {
+          type: 'string',
+          description: 'CSS to inject (for modify action)',
+        },
+        x: {
+          type: 'number',
+          description: 'X coordinate for scroll action',
+        },
+        y: {
+          type: 'number',
+          description: 'Y coordinate for scroll action',
+        },
+      },
+      required: ['action'],
+    },
+  },
 } as const
-

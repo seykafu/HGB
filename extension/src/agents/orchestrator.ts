@@ -6,6 +6,7 @@ import { searchDocs } from '../tools/searchDocs'
 import { proposeCode, outputSnippets } from '../tools/codeActions'
 import { sendGameAction } from '../tools/gameBridge'
 import { getDevtools } from '../tools/devtoolsBridge'
+import { manipulatePage } from '../tools/pageManipulation'
 import type { ChatMessage } from '../lib/openai'
 
 const ORCHESTRATOR_SYSTEM_PROMPT = `You are the Orchestrator for an indie game NPC Copilot. Your job is to route user requests to the right tools.
@@ -20,6 +21,7 @@ Use other tools for:
 - Code generation: proposeCode or outputSnippets
 - Immediate game actions: sendGameAction
 - Debugging errors: getDevtools
+- Page interaction: manipulatePage (when user wants to click, type, scroll, highlight, or modify elements on the current web page)
 
 You may call multiple tools in sequence. Always provide a friendly, helpful final answer with citations when using docs.`
 
@@ -28,17 +30,31 @@ const FALLBACK_SYSTEM_PROMPT = `You are a helpful assistant for indie game devel
 - Code generation for NPC agents
 - Debugging game issues
 - Game actions and NPC behavior
+- Interacting with web pages (clicking, typing, scrolling, highlighting)
 
-Provide clear, practical answers with code examples when relevant.`
+Provide clear, practical answers with code examples when relevant. Be engaging and proactive in helping users.`
+
+// Status message mapping
+const TOOL_STATUS_MESSAGES: Record<string, string> = {
+  searchDocs: 'Analyzing documents...',
+  proposeCode: 'Generating code...',
+  outputSnippets: 'Generating code...',
+  sendGameAction: 'Sending game action...',
+  getDevtools: 'Debugging...',
+  manipulatePage: 'Interacting with page...',
+}
 
 export interface OrchestrateResult {
   stream: ReadableStream<Uint8Array>
   citations?: string[]
 }
 
+export type StatusCallback = (status: string | null) => void
+
 export async function orchestrate(
   userText: string,
-  conversationHistory: ChatMessage[] = []
+  conversationHistory: ChatMessage[] = [],
+  onStatusUpdate?: StatusCallback
 ): Promise<OrchestrateResult> {
   // Check if we have OpenAI API key for tool calling
   const key = await get<string>('openaiKey', '')
@@ -55,6 +71,8 @@ export async function orchestrate(
     if (isDocQuestion) {
       try {
         console.log('GameNPC: Detected doc question, using searchDocs directly')
+        onStatusUpdate?.('Analyzing documents...')
+        
         // Infer engine from query
         let engine: 'unity' | 'unreal' | 'frostbite' | 'auto' = 'auto'
         if (/unity/i.test(userText)) engine = 'unity'
@@ -68,6 +86,8 @@ export async function orchestrate(
           const answer = searchResult.data?.answer || searchResult.message || 'No documentation found.'
           const citations = searchResult.citations
           
+          onStatusUpdate?.('Processing response...')
+          
           // Create a stream from the answer
           const stream = new ReadableStream({
             start(controller) {
@@ -79,6 +99,7 @@ export async function orchestrate(
             },
           })
           
+          onStatusUpdate?.(null)
           return { stream, citations }
         }
       } catch (error) {
@@ -87,6 +108,7 @@ export async function orchestrate(
     }
     
     // Regular fallback
+    onStatusUpdate?.('Processing...')
     const messages: ChatMessage[] = [
       { role: 'system', content: FALLBACK_SYSTEM_PROMPT },
       ...conversationHistory,
@@ -97,6 +119,7 @@ export async function orchestrate(
     if (!stream) {
       throw new Error('Failed to get response from backend')
     }
+    onStatusUpdate?.(null)
     return { stream }
   }
 
@@ -107,6 +130,7 @@ export async function orchestrate(
     TOOL_SCHEMAS.outputSnippets,
     TOOL_SCHEMAS.sendGameAction,
     TOOL_SCHEMAS.getDevtools,
+    TOOL_SCHEMAS.manipulatePage,
   ]
 
   const toolHandlers: Record<string, (args: any) => Promise<any>> = {
@@ -130,6 +154,10 @@ export async function orchestrate(
       const result = await getDevtools(args)
       return result
     },
+    manipulatePage: async (args) => {
+      const result = await manipulatePage(args)
+      return result
+    },
   }
 
   const messages: ChatMessage[] = [
@@ -139,6 +167,7 @@ export async function orchestrate(
   ]
 
   try {
+    onStatusUpdate?.('Thinking...')
     const collectedCitations: string[] = []
     
     // We need to intercept tool calls to collect citations
@@ -147,13 +176,16 @@ export async function orchestrate(
       messages, 
       tools, 
       toolHandlers,
-      collectedCitations
+      collectedCitations,
+      0,
+      onStatusUpdate
     )
     
     if (!stream) {
       throw new Error('Failed to get response from orchestrator')
     }
 
+    onStatusUpdate?.(null)
     return { 
       stream,
       citations: collectedCitations.length > 0 ? collectedCitations : undefined
@@ -161,6 +193,7 @@ export async function orchestrate(
   } catch (error) {
     // If tool calling fails, fallback to regular streaming
     console.warn('GameNPC: Tool calling failed, falling back to regular mode:', error)
+    onStatusUpdate?.('Processing...')
     const fallbackMessages: ChatMessage[] = [
       { role: 'system', content: FALLBACK_SYSTEM_PROMPT },
       ...conversationHistory,
@@ -171,6 +204,7 @@ export async function orchestrate(
     if (!stream) {
       throw new Error('Failed to get response from backend')
     }
+    onStatusUpdate?.(null)
     return { stream }
   }
 }
@@ -181,7 +215,8 @@ async function callWithToolsWithCitations(
   tools: Array<{ name: string; description: string; parameters: any }>,
   toolHandlers: Record<string, (args: any) => Promise<any>>,
   citations: string[],
-  depth: number = 0
+  depth: number = 0,
+  onStatusUpdate?: StatusCallback
 ): Promise<ReadableStream<Uint8Array> | null> {
   const MAX_DEPTH = 5
   if (depth > MAX_DEPTH) {
@@ -230,12 +265,16 @@ async function callWithToolsWithCitations(
       // Execute tool calls and collect citations
       const toolResults = await Promise.all(
         message.tool_calls.map(async (toolCall: any) => {
-          const handler = toolHandlers[toolCall.function.name]
+          const toolName = toolCall.function.name
+          const statusMessage = TOOL_STATUS_MESSAGES[toolName] || 'Processing...'
+          onStatusUpdate?.(statusMessage)
+          
+          const handler = toolHandlers[toolName]
           if (!handler) {
             return {
               tool_call_id: toolCall.id,
               role: 'tool' as const,
-              content: JSON.stringify({ ok: false, message: `Unknown tool: ${toolCall.function.name}` }),
+              content: JSON.stringify({ ok: false, message: `Unknown tool: ${toolName}` }),
             }
           }
 
@@ -244,7 +283,7 @@ async function callWithToolsWithCitations(
             const result = await handler(args)
             
             // Collect citations from searchDocs results
-            if (toolCall.function.name === 'searchDocs' && result.citations && Array.isArray(result.citations)) {
+            if (toolName === 'searchDocs' && result.citations && Array.isArray(result.citations)) {
               citations.push(...result.citations)
             }
             
@@ -273,10 +312,12 @@ async function callWithToolsWithCitations(
       ]
 
       // Recursively call with updated messages
-      return callWithToolsWithCitations(newMessages, tools, toolHandlers, citations, depth + 1)
+      onStatusUpdate?.('Synthesizing response...')
+      return callWithToolsWithCitations(newMessages, tools, toolHandlers, citations, depth + 1, onStatusUpdate)
     }
 
     // No tool calls, return final response as stream
+    onStatusUpdate?.('Generating response...')
     const finalText = message.content || ''
     return new ReadableStream({
       start(controller) {

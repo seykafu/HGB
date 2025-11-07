@@ -1,0 +1,66 @@
+{
+  "name": "gamenpc-desktop",
+  "version": "0.1.0",
+  "description": "GameNPC: AI Gaming Copilot - Desktop Application",
+  "main": "dist/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:mac": "npm run build && electron-builder --mac",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && tsx electron-dev.js\"",
+    "electron:build": "npm run build && electron-builder",
+    "start": "electron dist/main.js"
+  },
+  "build": {
+    "appId": "com.gamenpc.desktop",
+    "productName": "GameNPC",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    }
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.80.0",
+    "electron-store": "^10.0.0",
+    "phaser": "^3.90.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.9",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vite-plugin-electron": "^0.28.0",
+    "wait-on": "^8.0.1"
+  }
+}
