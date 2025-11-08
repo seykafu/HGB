@@ -8,12 +8,29 @@ export async function getSupabaseClient(): Promise<SupabaseClient> {
     return supabaseClient
   }
 
-  // Get Supabase config from storage or environment
-  const supabaseUrl = await get<string>('supabaseUrl', '')
-  const supabaseAnonKey = await get<string>('supabaseAnonKey', '')
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Supabase configuration not found. Please set supabaseUrl and supabaseAnonKey in Settings.')
+  // Default Supabase URL (can be overridden in Settings)
+  const defaultSupabaseUrl = 'https://msomzmvhvgsxfxrpvrzp.supabase.co'
+  
+  // Get Supabase config from storage, environment variable, or use defaults
+  let supabaseUrl = await get<string>('supabaseUrl', '')
+  let supabaseAnonKey = await get<string>('supabaseAnonKey', '')
+  
+  // Use default URL if not set
+  if (!supabaseUrl) {
+    supabaseUrl = defaultSupabaseUrl
+  }
+  
+  // Try to get anon key from environment variable first
+  if (!supabaseAnonKey && typeof window !== 'undefined' && window.electronAPI?.env) {
+    const envKey = await window.electronAPI.env.get('SUPABASE_ANON_KEY')
+    if (envKey) {
+      supabaseAnonKey = envKey
+    }
+  }
+  
+  // If still no key, try to get from storage (user may have set it)
+  if (!supabaseAnonKey) {
+    throw new Error('Supabase anon key not found. Please set SUPABASE_ANON_KEY environment variable or configure it in Settings.')
   }
 
   supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {

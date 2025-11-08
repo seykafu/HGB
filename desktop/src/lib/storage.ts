@@ -11,6 +11,14 @@ declare global {
       env?: {
         get: (key: string) => Promise<string | null>
       }
+      export?: {
+        exportGame: (data: {
+          gameId: string
+          gameSlug: string
+          platform: string
+          files: Record<string, string>
+        }) => Promise<string>
+      }
     }
   }
 }

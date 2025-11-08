@@ -26,8 +26,22 @@ const App = () => {
         gameId: scaffold.gameId,
         initialPrompt: 'Describe your 2D narrative game (setting, main character, goals).',
       })
-    } catch (error) {
-      alert(`Failed to create game: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } catch (error: any) {
+      console.error('Failed to create game:', error)
+      let errorMessage = 'Unknown error'
+      
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (error?.message) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      } else if (error?.code) {
+        // Supabase error
+        errorMessage = `Database error (${error.code}): ${error.message || error.hint || 'Check if tables exist'}`
+      }
+      
+      alert(`Failed to create game: ${errorMessage}\n\nMake sure you've run the database setup SQL in Supabase.`)
     }
   }
 

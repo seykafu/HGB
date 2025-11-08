@@ -22,6 +22,66 @@ export interface DevtoolsQueryInput {
   filter?: string
 }
 
+export interface CreateSceneInput {
+  name: string
+  theme?: string
+  width?: number
+  height?: number
+}
+
+export interface AddNpcInput {
+  scene: string
+  name: string
+  sprite?: string
+  x: number
+  y: number
+  entryDialogueNode?: string
+}
+
+export interface AddDialogueInput {
+  nodeId: string
+  type: 'line' | 'choice' | 'jump' | 'setVar'
+  content?: string
+  choices?: Array<{ text: string; targetId: string }>
+  targetId?: string
+  variable?: string
+  value?: any
+}
+
+export interface ConnectNodesInput {
+  fromId: string
+  toId: string
+  condition?: {
+    variable: string
+    operator: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte'
+    value: any
+  }
+}
+
+export interface BuildGameInput {
+  gameType: string
+  description: string
+  features?: string[]
+  assets?: Array<{
+    type: string
+    name: string
+    url: string
+    path: string
+  }>
+}
+
+export interface GenerateAssetsInput {
+  gameId: string
+  gameType: string
+  description: string
+  assets: Array<{
+    type: 'tile' | 'marker' | 'logo' | 'background' | 'sprite' | 'icon'
+    name: string
+    description: string
+    size?: { width: number; height: number }
+  }>
+}
+
 export interface ToolResult {
   ok: boolean
   data?: any
@@ -118,4 +178,125 @@ export const TOOL_SCHEMAS = {
     description: 'Fetch console logs, errors, or network issues. Use this when the user mentions errors, console issues, or debugging problems.',
     parameters: DevtoolsQueryInputSchema,
   },
+  createScene: {
+    name: 'createScene',
+    description: 'Create a new 2D game scene with a specified name, theme, and size.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Scene name' },
+        theme: { type: 'string', description: 'Scene theme (e.g., "town", "forest", "dungeon")' },
+        width: { type: 'number', description: 'Scene width in pixels' },
+        height: { type: 'number', description: 'Scene height in pixels' },
+      },
+      required: ['name'],
+    },
+  },
+  addNPC: {
+    name: 'addNPC',
+    description: 'Add a non-player character (NPC) to a specific scene.',
+    parameters: {
+      type: 'object',
+      properties: {
+        scene: { type: 'string', description: 'Scene name' },
+        name: { type: 'string', description: 'NPC name' },
+        sprite: { type: 'string', description: 'Sprite identifier' },
+        x: { type: 'number', description: 'X position' },
+        y: { type: 'number', description: 'Y position' },
+        entryDialogueNode: { type: 'string', description: 'Entry dialogue node ID' },
+      },
+      required: ['scene', 'name', 'x', 'y'],
+    },
+  },
+  addDialogue: {
+    name: 'addDialogue',
+    description: 'Add a dialogue node to the dialogue graph.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nodeId: { type: 'string', description: 'Node ID' },
+        type: { type: 'string', enum: ['line', 'choice', 'jump', 'setVar'], description: 'Node type' },
+        content: { type: 'string', description: 'Dialogue content' },
+        choices: { type: 'array', items: { type: 'object' }, description: 'Choice options' },
+        targetId: { type: 'string', description: 'Target node ID' },
+        variable: { type: 'string', description: 'Variable name' },
+        value: { type: 'any', description: 'Variable value' },
+      },
+      required: ['nodeId', 'type'],
+    },
+  },
+  connectNodes: {
+    name: 'connectNodes',
+    description: 'Connect two dialogue nodes.',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromId: { type: 'string', description: 'Source node ID' },
+        toId: { type: 'string', description: 'Target node ID' },
+        condition: { type: 'object', description: 'Optional condition' },
+      },
+      required: ['fromId', 'toId'],
+    },
+  },
+  buildGame: {
+    name: 'buildGame',
+    description: 'Generate complete Phaser 3 game code that runs in the preview. ALWAYS use this tool when the user asks to "build", "create", "make", "generate", or "design" a GAME. This is the PRIMARY tool for creating playable games in the Design Board and Preview. Examples: "build a tic-tac-toe game", "create a simple adventure game", "make me a puzzle game".',
+    parameters: {
+      type: 'object',
+      properties: {
+        gameType: { type: 'string', description: 'Type of game (e.g., "tic-tac-toe", "adventure", "puzzle")' },
+        description: { type: 'string', description: 'Game description from the user' },
+        features: { type: 'array', items: { type: 'string' }, description: 'List of game features' },
+        assets: { 
+          type: 'array', 
+          items: { type: 'object' },
+          description: 'Optional list of generated game assets (from generateGameAssets tool)' 
+        },
+      },
+      required: ['gameType', 'description'],
+    },
+  },
+  generateGameAssets: {
+    name: 'generateGameAssets',
+    description: 'Generate game assets (images, sprites, logos) using AI image generation. Use this BEFORE buildGame when creating a new game to generate visual assets like tiles, markers (X/O), logos, backgrounds, sprites, and icons. This tool creates PNG/JPG files and stores them for use in the game.',
+    parameters: {
+      type: 'object',
+      properties: {
+        gameId: { type: 'string', description: 'Game ID to associate assets with' },
+        gameType: { type: 'string', description: 'Type of game (e.g., "tic-tac-toe", "adventure", "puzzle")' },
+        description: { type: 'string', description: 'Game description from the user' },
+        assets: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { 
+                type: 'string', 
+                enum: ['tile', 'marker', 'logo', 'background', 'sprite', 'icon'],
+                description: 'Type of asset to generate' 
+              },
+              name: { type: 'string', description: 'Asset name/identifier (e.g., "x_marker", "o_marker", "game_logo")' },
+              description: { type: 'string', description: 'Detailed description of what the asset should look like' },
+              size: {
+                type: 'object',
+                properties: {
+                  width: { type: 'number', description: 'Asset width in pixels' },
+                  height: { type: 'number', description: 'Asset height in pixels' },
+                },
+              },
+            },
+            required: ['type', 'name', 'description'],
+          },
+          description: 'List of assets to generate',
+        },
+      },
+      required: ['gameId', 'gameType', 'description', 'assets'],
+    },
+  },
 } as const
+
+export const CreateSceneInputSchema = TOOL_SCHEMAS.createScene.parameters
+export const AddNpcInputSchema = TOOL_SCHEMAS.addNPC.parameters
+export const AddDialogueInputSchema = TOOL_SCHEMAS.addDialogue.parameters
+export const ConnectNodesInputSchema = TOOL_SCHEMAS.connectNodes.parameters
+export const BuildGameInputSchema = TOOL_SCHEMAS.buildGame.parameters

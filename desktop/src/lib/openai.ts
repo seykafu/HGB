@@ -13,7 +13,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
 
     if (mode === 'proxy') {
       const url = await get<string>('proxyUrl', 'http://localhost:3000/api/chat')
-      console.log('GameNPC Desktop: Calling proxy API:', url, 'with messages:', messages.length)
+      console.log('GameBao Desktop: Calling proxy API:', url, 'with messages:', messages.length)
       
       try {
         const res = await fetch(url, {
@@ -27,16 +27,16 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
         const responseText = await res.text()
         
         if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html') || contentType.includes('text/html')) {
-          console.error('GameNPC: Received HTML instead of JSON. This usually means the API requires authentication.')
+          console.error('GameBao: Received HTML instead of JSON. This usually means the API requires authentication.')
           throw new Error('API requires authentication. Please use "Direct OpenAI" mode in Options, or ensure your Next.js API route allows unauthenticated access.')
         }
 
         if (!res.ok) {
-          console.error('GameNPC: Proxy error:', res.status, responseText.substring(0, 200))
+          console.error('GameBao: Proxy error:', res.status, responseText.substring(0, 200))
           throw new Error(`Proxy error: ${res.status} ${res.statusText}`)
         }
 
-        console.log('GameNPC: Response content-type:', contentType)
+        console.log('GameBao: Response content-type:', contentType)
         
         // Check if response is streaming
         if (contentType.includes('text/event-stream') || contentType.includes('text/stream')) {
@@ -77,7 +77,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
           })
         } catch (parseError) {
           // If it's not JSON, treat the whole response as text
-          console.log('GameNPC: Response is plain text, treating as message:', responseText.substring(0, 100))
+          console.log('GameBao: Response is plain text, treating as message:', responseText.substring(0, 100))
           return new ReadableStream({
             start(controller) {
               const encoder = new TextEncoder()
@@ -90,7 +90,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
         }
       } catch (fetchError) {
         // If proxy fails, suggest using Direct OpenAI mode
-        console.error('GameNPC: Proxy fetch error:', fetchError)
+        console.error('GameBao: Proxy fetch error:', fetchError)
         const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError)
         
         // Check if user has OpenAI key configured for fallback
@@ -103,7 +103,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
           }
         }
         if (key) {
-          console.log('GameNPC: Proxy failed, falling back to Direct OpenAI mode')
+          console.log('GameBao: Proxy failed, falling back to Direct OpenAI mode')
           // Fall through to Direct OpenAI mode
         } else {
           // For desktop app, provide more helpful error message
@@ -123,15 +123,15 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
       const envKey = await window.electronAPI.env.get('OPENAI_API_KEY')
       if (envKey) {
         key = envKey
-        console.log('GameNPC Desktop: Using OPENAI_API_KEY from environment variable')
+        console.log('GameBao Desktop: Using OPENAI_API_KEY from environment variable')
       }
     }
     if (!key) {
       throw new Error('OpenAI API key not configured. Please set it in Settings > Direct OpenAI mode, or set the OPENAI_API_KEY environment variable.')
     }
 
-    const model = await get<string>('model', 'gpt-4o-mini')
-    console.log('GameNPC: Calling OpenAI API directly with model:', model)
+    const model = await get<string>('model', 'gpt-5')
+    console.log('GameBao: Calling OpenAI API directly with model:', model)
     
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -148,7 +148,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
 
     if (!res.ok) {
       const errorText = await res.text()
-      console.error('GameNPC: OpenAI error:', res.status, errorText)
+      console.error('GameBao: OpenAI error:', res.status, errorText)
       let errorMessage = `OpenAI error: ${res.status} ${res.statusText}`
       try {
         const errorData = JSON.parse(errorText)
@@ -159,9 +159,92 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
       throw new Error(errorMessage)
     }
 
-    return res.body
+    // Parse SSE stream and extract only content
+    return new ReadableStream({
+      async start(controller) {
+        const reader = res.body?.getReader()
+        const decoder = new TextDecoder()
+        const encoder = new TextEncoder()
+        
+        if (!reader) {
+          controller.close()
+          return
+        }
+
+        try {
+          let buffer = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+              // Skip empty lines and non-data lines
+              const trimmed = line.trim()
+              if (!trimmed || !trimmed.startsWith('data: ')) {
+                continue
+              }
+
+              const data = trimmed.slice(6).trim()
+              
+              // Check for end marker
+              if (data === '[DONE]') {
+                controller.close()
+                return
+              }
+
+              // Skip empty data lines
+              if (!data) {
+                continue
+              }
+
+              try {
+                const json = JSON.parse(data)
+                // Extract only the content delta, ignore everything else
+                const content = json.choices?.[0]?.delta?.content || ''
+                if (content && typeof content === 'string') {
+                  controller.enqueue(encoder.encode(content))
+                }
+              } catch (e) {
+                // Silently skip invalid JSON - don't show raw data
+                console.debug('Skipping invalid SSE line:', trimmed.substring(0, 50))
+              }
+            }
+          }
+          
+          // Process any remaining buffer
+          if (buffer.trim()) {
+            const trimmed = buffer.trim()
+            if (trimmed.startsWith('data: ')) {
+              const data = trimmed.slice(6).trim()
+              if (data && data !== '[DONE]') {
+                try {
+                  const json = JSON.parse(data)
+                  const content = json.choices?.[0]?.delta?.content || ''
+                  if (content && typeof content === 'string') {
+                    controller.enqueue(encoder.encode(content))
+                  }
+                } catch (e) {
+                  // Skip invalid JSON
+                }
+              }
+            }
+          }
+          
+          controller.close()
+        } catch (error) {
+          console.error('Stream parsing error:', error)
+          controller.error(error)
+        } finally {
+          reader.releaseLock()
+        }
+      },
+    })
   } catch (error) {
-    console.error('GameNPC: Stream error:', error)
+    console.error('GameBao: Stream error:', error)
     // Re-throw with more context
     if (error instanceof Error) {
       throw error

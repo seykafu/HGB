@@ -1,0 +1,32 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Cute Chinese Bao Bun -->
+  
+  <!-- Main bun body (white/cream) - wider -->
+  <ellipse cx="64" cy="75" rx="55" ry="45" fill="#FFF8E7" stroke="#E8D5B7" stroke-width="2"/>
+  
+  <!-- Top bun fold - wider -->
+  <path d="M 20 50 Q 64 35 108 50" fill="#FFF8E7" stroke="#E8D5B7" stroke-width="2"/>
+  
+  <!-- Fold lines on top - adjusted for wider bun -->
+  <path d="M 30 45 Q 45 40 60 45" fill="none" stroke="#E8D5B7" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M 68 45 Q 83 40 98 45" fill="none" stroke="#E8D5B7" stroke-width="1.5" stroke-linecap="round"/>
+  
+  <!-- Cute face - eyes -->
+  <circle cx="54" cy="70" r="4" fill="#2C3E50"/>
+  <circle cx="74" cy="70" r="4" fill="#2C3E50"/>
+  <circle cx="56" cy="68" r="1.5" fill="#FFF"/>
+  <circle cx="76" cy="68" r="1.5" fill="#FFF"/>
+  
+  <!-- Cute smile -->
+  <path d="M 50 80 Q 64 88 78 80" fill="none" stroke="#2C3E50" stroke-width="2.5" stroke-linecap="round"/>
+  
+  <!-- Blush cheeks -->
+  <ellipse cx="42" cy="75" rx="6" ry="5" fill="#FFB6C1" opacity="0.6"/>
+  <ellipse cx="86" cy="75" rx="6" ry="5" fill="#FFB6C1" opacity="0.6"/>
+  
+  <!-- Steam lines (optional cute detail) - adjusted for wider bun -->
+  <path d="M 20 35 Q 15 25 10 20" fill="none" stroke="#E8D5B7" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  <path d="M 64 30 Q 64 20 64 15" fill="none" stroke="#E8D5B7" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  <path d="M 108 35 Q 113 25 118 20" fill="none" stroke="#E8D5B7" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+</svg>
+

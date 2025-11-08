@@ -1,7 +1,7 @@
 {
-  "name": "gamenpc-desktop",
+  "name": "gamebao-desktop",
   "version": "0.1.0",
-  "description": "GameNPC: AI Gaming Copilot - Desktop Application",
+  "description": "GameBao: AI Gaming Copilot - Desktop Application",
   "main": "dist/main.js",
   "type": "module",
   "scripts": {
@@ -11,13 +11,13 @@
     "build": "npm run build:main && npm run build:renderer",
     "build:mac": "npm run build && electron-builder --mac",
     "preview": "vite preview",
-    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && tsx electron-dev.js\"",
+    "electron:dev": "npm run build:main && concurrently \"npm run dev\" \"wait-on http://localhost:5173 http://localhost:5174 && electron dist/main.js\"",
     "electron:build": "npm run build && electron-builder",
     "start": "electron dist/main.js"
   },
   "build": {
-    "appId": "com.gamenpc.desktop",
-    "productName": "GameNPC",
+    "appId": "com.gamebao.desktop",
+    "productName": "GameBao",
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [

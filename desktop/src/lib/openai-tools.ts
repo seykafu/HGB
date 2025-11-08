@@ -31,7 +31,7 @@ export async function callWithToolsWithCitations(
       const envKey = await window.electronAPI.env.get('OPENAI_API_KEY')
       if (envKey) {
         key = envKey
-        console.log('GameNPC Desktop: Using OPENAI_API_KEY from environment variable for tool calling')
+        console.log('GameBao Desktop: Using OPENAI_API_KEY from environment variable for tool calling')
       }
     }
     
@@ -39,7 +39,7 @@ export async function callWithToolsWithCitations(
       throw new Error('OpenAI API key required for tool calling. Please set it in Settings > Direct OpenAI mode, or set the OPENAI_API_KEY environment variable.')
     }
 
-    const model = await get<string>('model', 'gpt-4o-mini')
+    const model = await get<string>('model', 'gpt-5')
     
     // Use OpenAI API directly for tool calling
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -123,27 +123,117 @@ export async function callWithToolsWithCitations(
       return callWithToolsWithCitations(newMessages, tools, toolHandlers, citations, depth + 1, onStatusUpdate)
     }
 
-    // No tool calls, return final response as stream
-    const finalText = message.content || ''
+    // No tool calls, get final streaming response
     onStatusUpdate?.('Generating response...')
+    
+    // Make a streaming API call for the final response
+    const streamRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        messages: [
+          ...messages,
+          message,
+        ],
+      }),
+    })
+
+    if (!streamRes.ok) {
+      const errorText = await streamRes.text()
+      throw new Error(`OpenAI streaming error: ${streamRes.status} ${errorText}`)
+    }
+
+    // Parse SSE stream and extract content
     return new ReadableStream({
-      start(controller) {
+      async start(controller) {
+        const reader = streamRes.body?.getReader()
+        const decoder = new TextDecoder()
         const encoder = new TextEncoder()
-        let index = 0
-        const sendChunk = () => {
-          if (index < finalText.length) {
-            controller.enqueue(encoder.encode(finalText[index]))
-            index++
-            setTimeout(sendChunk, 10)
-          } else {
-            controller.close()
-          }
+        
+        if (!reader) {
+          controller.close()
+          return
         }
-        sendChunk()
+
+        try {
+          let buffer = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+              // Skip empty lines and non-data lines
+              const trimmed = line.trim()
+              if (!trimmed || !trimmed.startsWith('data: ')) {
+                continue
+              }
+
+              const data = trimmed.slice(6).trim()
+              
+              // Check for end marker
+              if (data === '[DONE]') {
+                controller.close()
+                return
+              }
+
+              // Skip empty data lines
+              if (!data) {
+                continue
+              }
+
+              try {
+                const json = JSON.parse(data)
+                // Extract only the content delta, ignore everything else
+                const content = json.choices?.[0]?.delta?.content || ''
+                if (content && typeof content === 'string') {
+                  controller.enqueue(encoder.encode(content))
+                }
+              } catch (e) {
+                // Silently skip invalid JSON - don't show raw data
+                console.debug('Skipping invalid SSE line:', trimmed.substring(0, 50))
+              }
+            }
+          }
+          
+          // Process any remaining buffer
+          if (buffer.trim()) {
+            const trimmed = buffer.trim()
+            if (trimmed.startsWith('data: ')) {
+              const data = trimmed.slice(6).trim()
+              if (data && data !== '[DONE]') {
+                try {
+                  const json = JSON.parse(data)
+                  const content = json.choices?.[0]?.delta?.content || ''
+                  if (content && typeof content === 'string') {
+                    controller.enqueue(encoder.encode(content))
+                  }
+                } catch (e) {
+                  // Skip invalid JSON
+                }
+              }
+            }
+          }
+          
+          controller.close()
+        } catch (error) {
+          console.error('Stream parsing error:', error)
+          controller.error(error)
+        } finally {
+          reader.releaseLock()
+        }
       },
     })
   } catch (error) {
-    console.error('GameNPC: Tool calling error:', error)
+    console.error('GameBao: Tool calling error:', error)
     throw error
   }
 }

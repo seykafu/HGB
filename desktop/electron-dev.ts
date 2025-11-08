@@ -9,9 +9,9 @@ import Store from 'electron-store'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const store = new Store()
+const store = new Store() as any
 
-let mainWindow = null
+let mainWindow: BrowserWindow | null = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -21,7 +21,7 @@ function createWindow() {
     minHeight: 500,
     backgroundColor: '#F8F1E3',
     webPreferences: {
-      preload: join(__dirname, 'electron-dev-preload.js'),
+      preload: join(__dirname, 'electron-dev-preload.ts'),
       nodeIntegration: false,
       contextIsolation: true,
     },
@@ -29,8 +29,9 @@ function createWindow() {
     frame: true,
   })
 
-  // In development, load from Vite dev server
-  mainWindow.loadURL('http://localhost:5173')
+  // In development, try port 5173 first, then 5174
+  const port = process.env.VITE_PORT || '5173'
+  mainWindow.loadURL(`http://localhost:${port}`)
   mainWindow.webContents.openDevTools()
 
   mainWindow.on('closed', () => {
@@ -55,11 +56,11 @@ app.on('window-all-closed', () => {
 })
 
 // IPC handlers for storage
-ipcMain.handle('storage:get', async (_, key, fallback) => {
+ipcMain.handle('storage:get', async (_, key: string, fallback: any) => {
   return store.get(key, fallback)
 })
 
-ipcMain.handle('storage:set', async (_, key, value) => {
+ipcMain.handle('storage:set', async (_, key: string, value: any) => {
   store.set(key, value)
 })
 
@@ -67,17 +68,22 @@ ipcMain.handle('storage:getAll', async () => {
   return store.store
 })
 
-ipcMain.handle('storage:remove', async (_, key) => {
+ipcMain.handle('storage:remove', async (_, key: string) => {
   store.delete(key)
 })
 
 // IPC handler for environment variables
-ipcMain.handle('env:get', async (_, key) => {
+ipcMain.handle('env:get', async (_, key: string) => {
   return process.env[key] || null
 })
 
 // IPC handler for game export
-ipcMain.handle('export:game', async (_, data) => {
+ipcMain.handle('export:game', async (_, data: {
+  gameId: string
+  gameSlug: string
+  platform: string
+  files: Record<string, string>
+}) => {
   const { writeFile, mkdir } = await import('fs/promises')
   const { join } = await import('path')
   
@@ -99,3 +105,4 @@ ipcMain.handle('export:game', async (_, data) => {
   
   return exportDir
 })
+

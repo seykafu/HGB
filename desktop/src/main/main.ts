@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { request } from 'http'
 import Store from 'electron-store'
 
 // ES module equivalent of __dirname
@@ -28,7 +29,35 @@ function createWindow() {
   })
 
   if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
-    mainWindow.loadURL('http://localhost:5173')
+    // Wait a moment for Vite to start, then try both ports
+    setTimeout(() => {
+      const tryPort = (port: number) => {
+        return new Promise<boolean>((resolve) => {
+          const req = request({ 
+            hostname: 'localhost', 
+            port, 
+            method: 'HEAD',
+            timeout: 500
+          }, () => {
+            mainWindow?.loadURL(`http://localhost:${port}`)
+            resolve(true)
+          })
+          req.on('error', () => resolve(false))
+          req.on('timeout', () => {
+            req.destroy()
+            resolve(false)
+          })
+          req.end()
+        })
+      }
+      
+      // Try 5173 first, then 5174
+      tryPort(5173).then(loaded => {
+        if (!loaded) {
+          tryPort(5174)
+        }
+      })
+    }, 1500)
     mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(join(__dirname, '../index.html'))
@@ -75,4 +104,33 @@ ipcMain.handle('storage:remove', async (_, key: string) => {
 // IPC handler for environment variables
 ipcMain.handle('env:get', async (_, key: string) => {
   return process.env[key] || null
+})
+
+// IPC handler for game export
+ipcMain.handle('export:game', async (_, data: {
+  gameId: string
+  gameSlug: string
+  platform: string
+  files: Record<string, string>
+}) => {
+  const { writeFile, mkdir } = await import('fs/promises')
+  const { join } = await import('path')
+  
+  const exportDir = join(app.getPath('userData'), 'exports', data.gameSlug, data.platform)
+  
+  // Create export directory
+  await mkdir(exportDir, { recursive: true })
+  
+  // Write all files
+  for (const [path, content] of Object.entries(data.files)) {
+    const filePath = join(exportDir, path)
+    const dirPath = join(filePath, '..')
+    await mkdir(dirPath, { recursive: true })
+    await writeFile(filePath, content, 'utf-8')
+  }
+  
+  // TODO: Bundle Phaser runtime and create executable
+  // For now, just export the game files
+  
+  return exportDir
 })

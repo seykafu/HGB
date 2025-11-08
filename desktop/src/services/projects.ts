@@ -36,7 +36,18 @@ export async function createGame(title: string, slug: string): Promise<Game> {
     .select()
     .single()
 
-  if (error) throw error
+  if (error) {
+    console.error('createGame error:', error)
+    if (error.code === '42P01') {
+      throw new Error('Database table "games" does not exist. Please run the setup SQL in Supabase.')
+    }
+    throw new Error(`Failed to create game: ${error.message || error.code || 'Unknown database error'}`)
+  }
+  
+  if (!data) {
+    throw new Error('Game created but no data returned')
+  }
+  
   return data
 }
 
@@ -148,7 +159,10 @@ export async function saveFiles(
 
     if (uploadError) {
       console.error(`Failed to upload ${file.path}:`, uploadError)
-      throw uploadError
+      if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('does not exist') || uploadError.message?.includes('not found')) {
+        throw new Error(`Storage bucket "gamefiles" does not exist. Please run the setup SQL in Supabase to create it.`)
+      }
+      throw new Error(`Failed to upload ${file.path}: ${uploadError.message || uploadError}`)
     }
 
     // Calculate hash and size (simplified - in production, use crypto)
@@ -171,9 +185,49 @@ export async function saveFiles(
 
     if (dbError) {
       console.error(`Failed to save file record for ${file.path}:`, dbError)
-      throw dbError
+      if (dbError.code === '42P01') {
+        throw new Error('Database table "game_files" does not exist. Please run the setup SQL in Supabase.')
+      }
+      throw new Error(`Failed to save file record: ${dbError.message || dbError.code || 'Unknown error'}`)
     }
   }
+}
+
+export async function listFilePaths(gameId: string): Promise<string[]> {
+  const supabase = await getSupabaseClient()
+  const user = await getUser()
+
+  if (!user) {
+    throw new Error('Not authenticated')
+  }
+
+  // Verify game ownership
+  await getGame(gameId)
+
+  // Get file list from DB
+  const { data: fileRecords, error: listError } = await supabase
+    .from('game_files')
+    .select('path, game_id, updated_at')
+    .eq('game_id', gameId)
+    .order('path')
+
+  if (listError) {
+    console.error('Failed to list file paths:', listError)
+    console.error('List error details:', JSON.stringify(listError, null, 2))
+    throw listError
+  }
+
+  const paths = (fileRecords || []).map(record => record.path)
+  console.log(`GameBao: Found ${paths.length} files for game ${gameId}:`, paths)
+  if (paths.length > 0) {
+    console.log('GameBao: File paths breakdown:', {
+      assets: paths.filter(p => p.startsWith('assets/')),
+      scripts: paths.filter(p => p.startsWith('scripts/')),
+      scenes: paths.filter(p => p.startsWith('scenes/')),
+      other: paths.filter(p => !p.startsWith('assets/') && !p.startsWith('scripts/') && !p.startsWith('scenes/'))
+    })
+  }
+  return paths
 }
 
 export async function loadFiles(gameId: string): Promise<Record<string, string>> {
@@ -208,7 +262,15 @@ export async function loadFiles(gameId: string): Promise<Record<string, string>>
       continue
     }
 
-    files[record.path] = await data.text()
+    // For image files, convert to blob URL or data URL
+    if (record.path.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
+      const blob = data
+      const blobUrl = URL.createObjectURL(blob)
+      files[record.path] = blobUrl // Store blob URL for images
+    } else {
+      // For text files, read as text
+      files[record.path] = await data.text()
+    }
   }
 
   return files

@@ -1,5 +1,14 @@
 import Phaser from 'phaser'
 
+// Extend window to include custom scene classes
+declare global {
+  interface Window {
+    TicTacToeScene?: typeof Phaser.Scene
+    GameScene?: typeof Phaser.Scene
+    [key: string]: any
+  }
+}
+
 export interface GameScene {
   name: string
   width: number
@@ -23,6 +32,7 @@ export class PhaserGameRuntime {
   private game: Phaser.Game | null = null
   private scenes: Map<string, GameScene> = new Map()
   private currentSceneName: string | null = null
+  private loadedScripts: Set<string> = new Set()
 
   constructor(private container: HTMLElement) {}
 
@@ -30,23 +40,52 @@ export class PhaserGameRuntime {
     this.scenes.set(scene.name, scene)
   }
 
-  async startScene(sceneName: string): Promise<void> {
-    if (!this.scenes.has(sceneName)) {
-      throw new Error(`Scene "${sceneName}" not found`)
+  async loadGameScript(scriptCode: string, sceneName: string): Promise<void> {
+    // Execute the game script code
+    try {
+      // Create a function that executes the script in a safe context
+      const executeScript = new Function(scriptCode)
+      executeScript()
+      this.loadedScripts.add(sceneName)
+    } catch (error) {
+      console.error('Failed to load game script:', error)
+      throw error
     }
+  }
 
-    const scene = this.scenes.get(sceneName)!
-
+  async startScene(sceneName: string, customSceneClass?: any, assets?: Record<string, string>): Promise<void> {
     if (this.game) {
       this.game.destroy(true)
     }
 
+    let sceneConfig: Phaser.Types.Core.GameConfig['scene']
+
+    // If we have a custom scene class (from loaded script), use it
+    if (customSceneClass) {
+      sceneConfig = customSceneClass
+    } else if (this.scenes.has(sceneName)) {
+      // Otherwise use the scene definition
+      const scene = this.scenes.get(sceneName)!
+      sceneConfig = {
+        preload: this.createPreloadFunction(scene),
+        create: this.createCreateFunction(scene),
+        update: this.createUpdateFunction(scene),
+      }
+    } else {
+      throw new Error(`Scene "${sceneName}" not found`)
+    }
+
+    // Use the container's actual size (600x600 as set in the style)
+    // The container will be scrollable if it exceeds the viewport
+    const containerWidth = this.container.clientWidth || 600
+    const containerHeight = this.container.clientHeight || 600
+
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
-      width: scene.width,
-      height: scene.height,
+      width: containerWidth,
+      height: containerHeight,
       parent: this.container,
-      backgroundColor: '#87CEEB', // Sky blue default
+      backgroundColor: '#87CEEB',
       physics: {
         default: 'arcade',
         arcade: {
@@ -54,12 +93,14 @@ export class PhaserGameRuntime {
           debug: false,
         },
       },
-      scene: {
-        preload: this.createPreloadFunction(scene),
-        create: this.createCreateFunction(scene),
-        update: this.createUpdateFunction(scene),
+      scene: sceneConfig,
+      scale: {
+        mode: Phaser.Scale.NONE, // Don't scale, use exact size
+        autoCenter: Phaser.Scale.CENTER_BOTH,
       },
-    }
+      // Pass assets to the game config so scenes can access them
+      assets: assets || {},
+    } as any
 
     this.game = new Phaser.Game(config)
     this.currentSceneName = sceneName

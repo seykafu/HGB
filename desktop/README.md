@@ -1,6 +1,6 @@
-# GameNPC Desktop Application
+# GameBao Desktop Application
 
-A macOS desktop application version of the GameNPC Chrome extension, built with Electron, React, TypeScript, and Tailwind CSS.
+A macOS desktop application version of the GameBao Chrome extension, built with Electron, React, TypeScript, and Tailwind CSS.
 
 ## Features
 
@@ -153,4 +153,4 @@ desktop/
 
 ## License
 
-Same as the main GameNPC project.
+Same as the main GameBao project.

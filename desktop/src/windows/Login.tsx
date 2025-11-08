@@ -6,7 +6,11 @@ import { Input } from '../ui/components/Input'
 import { Mascot } from '../ui/mascot/Mascot'
 import { Sparkle } from '../ui/icons/Sparkle'
 
-export default function Login() {
+interface LoginProps {
+  onOpenSettings?: () => void
+}
+
+export default function Login({ onOpenSettings }: LoginProps) {
   const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -42,7 +46,7 @@ export default function Login() {
             <Sparkle className="absolute -bottom-1 right-0 h-4 w-4 text-[#E9C46A] animate-pulseSoft delay-100" />
           </div>
           <h1 className="font-display text-2xl tracking-tight text-[#2E2A25] mb-2">
-            GameNPC
+            GameBao
           </h1>
           <p className="text-sm text-[#2E2A25]/70">
             {isSignUp ? 'Create your account' : 'Sign in to continue'}
@@ -92,15 +96,27 @@ export default function Login() {
           </Button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-sm text-[#533F31] hover:text-[#2E2A25] underline"
-          >
-            {isSignUp
-              ? 'Already have an account? Sign in'
-              : "Don't have an account? Sign up"}
-          </button>
+        <div className="mt-6 space-y-3">
+          <div className="text-center">
+            <button
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-sm text-[#533F31] hover:text-[#2E2A25] underline"
+            >
+              {isSignUp
+                ? 'Already have an account? Sign in'
+                : "Don't have an account? Sign up"}
+            </button>
+          </div>
+          {onOpenSettings && (
+            <div className="text-center">
+              <button
+                onClick={onOpenSettings}
+                className="text-sm text-[#533F31] hover:text-[#2E2A25] underline"
+              >
+                Configure Supabase Settings
+              </button>
+            </div>
+          )}
         </div>
       </Card>
     </div>
