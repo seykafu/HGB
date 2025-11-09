@@ -5,14 +5,13 @@ import Login from './Login'
 import { Settings } from './Settings'
 
 interface AuthGateProps {
-  children: React.ReactNode
+  children: React.ReactNode | ((props: { onOpenSettings: () => void }) => React.ReactNode)
 }
 
 export const AuthGate = ({ children }: AuthGateProps) => {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
-  const [needsConfig, setNeedsConfig] = useState(false)
 
   useEffect(() => {
     checkConfig()
@@ -40,13 +39,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
         }
       }
 
-      if (!supabaseAnonKey) {
-        setNeedsConfig(true)
-        setLoading(false)
-        return
-      }
-
-      // Try to get Supabase client
+      // Try to get Supabase client (assume config is available via env vars or defaults)
       await getSupabaseClient()
 
       // Check initial auth state
@@ -69,17 +62,17 @@ export const AuthGate = ({ children }: AuthGateProps) => {
         }
       }
     } catch (error) {
-      // If Supabase config is invalid, show settings
-      setNeedsConfig(true)
-      setLoading(false)
+      // If Supabase config is invalid, still proceed (assume env vars are set)
+      console.warn('Supabase config check failed, proceeding anyway:', error)
+      getUser()
+        .then(setUser)
+        .catch(() => setUser(null))
+        .finally(() => setLoading(false))
     }
   }
 
   const handleSettingsSaved = async () => {
     setShowSettings(false)
-    setNeedsConfig(false)
-    setLoading(true)
-    await checkConfig()
   }
 
   if (loading) {
@@ -90,13 +83,20 @@ export const AuthGate = ({ children }: AuthGateProps) => {
     )
   }
 
-  if (needsConfig || showSettings) {
-    return <Settings onBack={showSettings ? () => setShowSettings(false) : () => {}} />
+  if (showSettings) {
+    return (
+      <Settings 
+        onBack={() => setShowSettings(false)}
+        onSave={handleSettingsSaved}
+      />
+    )
   }
 
   if (!user) {
     return <Login onOpenSettings={() => setShowSettings(true)} />
   }
 
-  return <>{children}</>
+  const onOpenSettings = () => setShowSettings(true)
+  
+  return <>{typeof children === 'function' ? children({ onOpenSettings }) : children}</>
 }

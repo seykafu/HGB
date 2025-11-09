@@ -8,9 +8,10 @@ import { signOut } from '../lib/supabase'
 interface HomeProps {
   onBuildNew: () => void
   onLoadGame: () => void
+  onOpenSettings?: () => void
 }
 
-export const Home = ({ onBuildNew, onLoadGame }: HomeProps) => {
+export const Home = ({ onBuildNew, onLoadGame, onOpenSettings }: HomeProps) => {
   const [signingOut, setSigningOut] = useState(false)
 
   const handleSignOut = async () => {
@@ -58,13 +59,23 @@ export const Home = ({ onBuildNew, onLoadGame }: HomeProps) => {
         </Button>
       </div>
 
-      <button
-        onClick={handleSignOut}
-        disabled={signingOut}
-        className="text-sm text-[#533F31]/60 hover:text-[#533F31] transition"
-      >
-        {signingOut ? 'Signing out...' : 'Sign Out'}
-      </button>
+      <div className="flex flex-col items-center gap-3">
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            className="text-sm text-[#533F31]/60 hover:text-[#533F31] transition"
+          >
+            Settings
+          </button>
+        )}
+        <button
+          onClick={handleSignOut}
+          disabled={signingOut}
+          className="text-sm text-[#533F31]/60 hover:text-[#533F31] transition"
+        >
+          {signingOut ? 'Signing out...' : 'Sign Out'}
+        </button>
+      </div>
     </div>
   )
 }

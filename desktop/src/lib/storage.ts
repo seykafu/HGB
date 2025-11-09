@@ -19,6 +19,9 @@ declare global {
           files: Record<string, string>
         }) => Promise<string>
       }
+      download?: {
+        downloadImage: (url: string) => Promise<ArrayBuffer>
+      }
     }
   }
 }

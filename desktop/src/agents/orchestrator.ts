@@ -155,17 +155,28 @@ export async function orchestrate(
         }
       }
       
-      // For NEW game builds (not modifications), generate assets first
+      // For NEW game builds (not modifications), determine required assets first, then generate them
       if (isGameBuildRequest && !isGameModificationRequest) {
         try {
-          const assetsToGenerate = determineAssetsForGameType(gameType, description)
-          if (assetsToGenerate.length > 0) {
+          // Step 1: Ask gameBuilder to analyze what assets are needed
+          onStatusUpdate?.('Analyzing game requirements...')
+          const { determineRequiredAssets } = await import('../tools/gameBuilder')
+          const requiredAssets = await determineRequiredAssets(gameType, description)
+          
+          if (requiredAssets.length > 0) {
+            console.log(`GameBao: Determined ${requiredAssets.length} required assets:`, requiredAssets.map(a => a.name))
+            
+            // Step 2: Generate the required assets
             onStatusUpdate?.('Generating game assets with AI...')
             const assetsResult = await generateGameAssets({
               gameId,
               gameType,
               description,
-              assets: assetsToGenerate,
+              assets: requiredAssets.map(a => ({
+                type: (a.type as 'tile' | 'marker' | 'logo' | 'background' | 'sprite' | 'icon') || 'sprite',
+                name: a.name,
+                description: a.description,
+              })),
             })
             
             if (assetsResult.ok && assetsResult.data?.assets) {
@@ -181,6 +192,8 @@ export async function orchestrate(
             } else {
               console.warn('GameBao: Asset generation failed, continuing without assets')
             }
+          } else {
+            console.log('GameBao: No assets required for this game type')
           }
         } catch (error) {
           console.error('GameBao: Asset generation error:', error)
@@ -476,10 +489,16 @@ export async function orchestrate(
     }
   }
 
+  // Build messages array with full conversation history
+  // If the last message in conversationHistory is already the current user message, don't duplicate it
+  const lastMessage = conversationHistory[conversationHistory.length - 1]
+  const isUserMessageAlreadyIncluded = lastMessage?.role === 'user' && lastMessage?.content === userText
+  
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...conversationHistory,
-    { role: 'user', content: userText },
+    // Only add userText if it's not already the last message in conversationHistory
+    ...(isUserMessageAlreadyIncluded ? [] : [{ role: 'user', content: userText }]),
   ]
 
   try {
@@ -508,10 +527,15 @@ export async function orchestrate(
     // If tool calling fails, fallback to regular streaming
     console.warn('GameBao: Tool calling failed, falling back to regular mode:', error)
     onStatusUpdate?.('Processing...')
+    // Build fallback messages with full conversation history
+    const lastMessage = conversationHistory[conversationHistory.length - 1]
+    const isUserMessageAlreadyIncluded = lastMessage?.role === 'user' && lastMessage?.content === userText
+    
     const fallbackMessages: ChatMessage[] = [
       { role: 'system', content: FALLBACK_SYSTEM_PROMPT },
       ...conversationHistory,
-      { role: 'user', content: userText },
+      // Only add userText if it's not already the last message in conversationHistory
+      ...(isUserMessageAlreadyIncluded ? [] : [{ role: 'user', content: userText }]),
     ]
     
     const stream = await streamFromBackend(fallbackMessages)

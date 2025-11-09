@@ -39,7 +39,12 @@ export async function callWithToolsWithCitations(
       throw new Error('OpenAI API key required for tool calling. Please set it in Settings > Direct OpenAI mode, or set the OPENAI_API_KEY environment variable.')
     }
 
-    const model = await get<string>('model', 'gpt-5')
+    let model = await get<string>('model', 'gpt-4o')
+    // Auto-migrate from GPT-5 to GPT-4o if GPT-5 is selected (requires org verification)
+    if (model === 'gpt-5') {
+      console.log('OpenAI Tools: Auto-migrating from GPT-5 to GPT-4o (GPT-5 requires organization verification)')
+      model = 'gpt-4o'
+    }
     
     // Use OpenAI API directly for tool calling
     const res = await fetch('https://api.openai.com/v1/chat/completions', {

@@ -119,31 +119,104 @@ async function generateGameCodeWithAI(
     throw new Error('OpenAI API key required for AI code generation')
   }
 
-  const model = await get<string>('model', 'gpt-5')
+  let model = await get<string>('model', 'gpt-4o')
+  // Auto-migrate from GPT-5 to GPT-4o if GPT-5 is selected (requires org verification)
+  if (model === 'gpt-5') {
+    console.log('GameBuilder: Auto-migrating from GPT-5 to GPT-4o (GPT-5 requires organization verification)')
+    model = 'gpt-4o'
+  }
   
-  // Build assets info for the prompt
+  // Generate a scene class name based on game type (must be defined before use in template strings)
+  const sceneClassName = gameType && gameType !== 'game' 
+    ? gameType.charAt(0).toUpperCase() + gameType.slice(1).replace(/[-_]/g, '') + 'Scene'
+    : 'GameScene'
+  
+  // Build assets info for the prompt with exact asset names and complete example
   const assetsInfo = assets && assets.length > 0
-    ? `\n\nAvailable assets (use blob URLs from this.sys.game.config.assets):\n${assets.map(a => `- ${a.name} (${a.type}): ${a.path}`).join('\n')}`
+    ? `\n\n**AVAILABLE ASSETS - YOU MUST USE THESE IN YOUR GAME (DO NOT IGNORE THESE):**
+${assets.map(a => `- "${a.name}" (${a.type})`).join('\n')}
+
+**COMPLETE WORKING EXAMPLE - YOU MUST FOLLOW THIS EXACT PATTERN:**
+
+class ${sceneClassName} extends Phaser.Scene {
+  preload() {
+    // CRITICAL: Access assets from game instance - this is how assets are passed to your scene
+    // Assets are stored on the game instance by the runtime
+    // Use plain JavaScript (no TypeScript syntax) - assets may be on game.assets or game.config.assets
+    const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
+    const assets = gameAssets || {}
+    
+${assets.map(a => `    // Load ${a.name} asset (blob URL from game instance)
+    if (assets['${a.name}']) {
+      this.load.image('${a.name}', assets['${a.name}'])
+    }`).join('\n')}
+  }
+
+  create() {
+    const width = this.cameras.main.width
+    const height = this.cameras.main.height
+    
+${assets.map((a) => {
+  if (a.name.includes('logo')) {
+    return `    // Display ${a.name} at top center
+    this.add.image(width / 2, 50, '${a.name}').setDisplaySize(100, 100).setOrigin(0.5)`
+  } else if (a.name.includes('background')) {
+    return `    // Display ${a.name} as background (full screen)
+    this.add.image(width / 2, height / 2, '${a.name}').setDisplaySize(width, height)`
+  } else if (a.name.includes('tile')) {
+    return `    // Use ${a.name} for game tiles/board
+    // Example: this.add.image(x, y, '${a.name}')`
+  } else if (a.name.includes('marker') || a.name.includes('x_') || a.name.includes('o_')) {
+    return `    // Use ${a.name} for game markers/pieces
+    // Example: this.add.image(x, y, '${a.name}')`
+  } else {
+    return `    // Use ${a.name} asset in your game
+    this.add.image(x, y, '${a.name}')`
+  }
+}).join('\n')}
+    
+    // ... rest of your game code
+  }
+}
+
+**CRITICAL REQUIREMENTS - READ CAREFULLY:**
+1. You MUST include a preload() method that loads ALL ${assets.length} asset(s) listed above
+2. You MUST use ALL ${assets.length} asset(s) in your create() method with this.add.image()
+3. DO NOT create placeholder shapes (rectangles, circles, graphics) if assets are available
+4. The assets are blob URLs stored on the game instance - access via: this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
+5. After loading, verify with: if (this.textures.exists('${assets[0]?.name}')) { /* use asset */ }
+`
     : ''
 
   const systemPrompt = `You are an expert Phaser 3 game developer. Generate complete, runnable Phaser 3 game code based on the user's description.
 
-Requirements:
+CRITICAL REQUIREMENTS:
 1. Generate a complete Phaser 3 Scene class that extends Phaser.Scene
-2. The class must be wrapped in an IIFE: (function() { ... })()
-3. Register the scene class globally: window.SceneClassName = SceneClassName
-4. Use proper Phaser 3 APIs (this.add, this.input, etc.)
-5. Include preload() method if assets are provided
-6. Include create() method for initialization
-7. Include update() method if the game needs continuous updates
-8. Make the game interactive and playable
-9. Use this.cameras.main.width and this.cameras.main.height for dimensions
-10. If assets are provided, load them in preload() using: this.load.image('key', this.sys.game.config.assets['key'])
+2. The class MUST be named exactly: ${sceneClassName}
+3. The class must be wrapped in an IIFE: (function() { ... })()
+4. Register the scene class globally: window.${sceneClassName} = ${sceneClassName}
+5. Use proper Phaser 3 APIs (this.add, this.input, etc.)
+6. Include preload() method if assets are provided
+7. Include create() method for initialization
+8. Include update() method if the game needs continuous updates
+9. Make the game interactive and playable
+10. Use this.cameras.main.width and this.cameras.main.height for dimensions
+11. **CRITICAL: Generate ONLY plain JavaScript code - NO TypeScript syntax!**
+    - DO NOT use TypeScript type assertions like "as any", "as string", etc.
+    - DO NOT use TypeScript-specific syntax
+    - The code will be executed as plain JavaScript, so use only JavaScript syntax
+12. **CRITICAL ASSET USAGE: If assets are provided in the prompt below, you MUST:**
+    - Load ALL assets in preload() method using: const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}; const assets = gameAssets || {}; if (assets['asset_name']) { this.load.image('asset_name', assets['asset_name']) }
+    - Use ALL assets in create() method (display them with this.add.image(x, y, 'asset_name'))
+    - DO NOT create placeholder rectangles, circles, or shapes if assets are available
+    - The assets object contains blob URLs that work directly with Phaser's load.image()
+    - Asset keys match the names listed in the assets section below
+    - **VERIFY**: After loading, you can check if assets loaded with: this.textures.exists('asset_name')
 
 Game Description: ${description}
 Game Type: ${gameType}${assetsInfo}
 
-Generate ONLY the JavaScript code, no explanations or markdown. The code should be a complete, runnable Phaser 3 game.`
+Generate ONLY the JavaScript code, no explanations or markdown. The code should be a complete, runnable Phaser 3 game that uses the provided assets.`
 
   const userPrompt = `Generate a Phaser 3 game based on this description: "${description}"
 
@@ -151,34 +224,60 @@ Make it a complete, playable game with proper game mechanics, controls, and visu
 
   console.log('GameBao: Calling OpenAI to generate game code...')
   
+  // GPT-5 has different parameter requirements
+  const isGPT5 = model.toLowerCase().includes('gpt-5')
+  const requestBody: any = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+  }
+  
+  if (isGPT5) {
+    // GPT-5 only supports default temperature (1), and uses max_completion_tokens
+    requestBody.max_completion_tokens = 16000
+    // Don't set temperature - GPT-5 only supports default value of 1
+  } else {
+    requestBody.temperature = 0.7
+    requestBody.max_tokens = 16000
+  }
+  
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 4000,
-    }),
+    body: JSON.stringify(requestBody),
   })
 
   if (!response.ok) {
     const errorText = await response.text()
     console.error('GameBao: OpenAI API error:', response.status, errorText)
-    throw new Error(`OpenAI API error: ${response.status}`)
+    let errorMessage = `OpenAI API error: ${response.status}`
+    try {
+      const errorData = JSON.parse(errorText)
+      errorMessage = errorData.error?.message || errorMessage
+    } catch {
+      // Use default error message
+    }
+    throw new Error(errorMessage)
   }
 
   const data = await response.json()
+  console.log('GameBao: OpenAI API response:', {
+    model: data.model,
+    choices: data.choices?.length || 0,
+    finishReason: data.choices?.[0]?.finish_reason,
+    hasContent: !!data.choices?.[0]?.message?.content,
+  })
+  
   const generatedCode = data.choices?.[0]?.message?.content || ''
   
   if (!generatedCode) {
-    throw new Error('No code generated by AI')
+    console.error('GameBao: Empty response from AI. Full response:', JSON.stringify(data, null, 2))
+    throw new Error(`No code generated by AI. Finish reason: ${data.choices?.[0]?.finish_reason || 'unknown'}`)
   }
 
   // Extract code from markdown code blocks if present
@@ -187,10 +286,114 @@ Make it a complete, playable game with proper game mechanics, controls, and visu
   if (codeBlockMatch) {
     code = codeBlockMatch[1].trim()
   }
+  
+  // Post-process: Remove TypeScript syntax (the code runs as plain JavaScript)
+  // Remove all TypeScript type assertions: " as any", " as string", etc.
+  // This handles patterns like:
+  // - (this.sys.game as any) -> (this.sys.game)
+  // - this.sys.game as any -> this.sys.game
+  // - (obj as any).prop -> (obj).prop
+  // We use a more aggressive regex that matches " as <type>" and removes it
+  code = code.replace(/\s+as\s+\w+/g, '')
+  
+  // Post-process: ALWAYS ensure assets are loaded and used if provided
+  if (assets && assets.length > 0) {
+    const assetNames = assets.map(a => a.name)
+    console.log('GameBao: Post-processing code to ensure assets are loaded and used:', assetNames)
+    
+    // ALWAYS inject asset loading into preload method (even if one exists)
+    const preloadMatch = code.match(/(preload\s*\([^)]*\)\s*\{)/)
+    if (preloadMatch) {
+      const preloadStart = preloadMatch.index! + preloadMatch[0].length
+      
+      // Check if assets are already being loaded in this preload method
+      const preloadContent = code.substring(preloadStart, code.indexOf('}', preloadStart) + 1)
+      const assetsAlreadyLoaded = assetNames.some(name => 
+        preloadContent.includes(`assets['${name}']`) || 
+        preloadContent.includes(`assets["${name}"]`) ||
+        preloadContent.includes(`assets.${name}`) ||
+        preloadContent.includes(`this.load.image('${name}'`) ||
+        preloadContent.includes(`this.load.image("${name}"`)
+      )
+      
+      if (!assetsAlreadyLoaded) {
+        console.log('GameBao: Injecting asset loading code into preload method')
+        const assetLoadingCode = `\n    // Load assets from game instance (stored by runtime)
+    const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
+    const assets = gameAssets || {}\n${assetNames.map(name => `    if (assets['${name}']) {\n      this.load.image('${name}', assets['${name}'])\n    }`).join('\n')}\n`
+        code = code.slice(0, preloadStart) + assetLoadingCode + code.slice(preloadStart)
+        console.log('GameBao: ✓ Injected asset loading code')
+      } else {
+        console.log('GameBao: Assets already being loaded in preload method')
+      }
+    } else {
+      // No preload method exists - add one before create()
+      console.log('GameBao: No preload method found, adding one before create()')
+      const createMatch = code.match(/(create\s*\([^)]*\)\s*\{)/)
+      if (createMatch) {
+        const createIndex = createMatch.index!
+        const assetLoadingCode = `  preload() {
+    // Load assets from game instance (stored by runtime)
+    const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
+    const assets = gameAssets || {}\n${assetNames.map(name => `    if (assets['${name}']) {\n      this.load.image('${name}', assets['${name}'])\n    }`).join('\n')}
+  }
+
+  `
+        code = code.slice(0, createIndex) + assetLoadingCode + code.slice(createIndex)
+        console.log('GameBao: ✓ Added preload method with asset loading')
+      }
+    }
+    
+    // ALWAYS inject asset usage into create method
+    const createMatch = code.match(/(create\s*\([^)]*\)\s*\{)/)
+    if (createMatch) {
+      const createStart = createMatch.index! + createMatch[0].length
+      
+      // Check if assets are already being used in this create method
+      const createEnd = code.indexOf('}', createStart)
+      const createContent = code.substring(createStart, createEnd > 0 ? createEnd : code.length)
+      const assetsAlreadyUsed = assetNames.some(name => 
+        createContent.includes(`this.add.image`) && (
+          createContent.includes(`'${name}'`) || 
+          createContent.includes(`"${name}"`)
+        )
+      )
+      
+      if (!assetsAlreadyUsed) {
+        console.log('GameBao: Injecting asset usage code into create method')
+        const assetUsageCode = `\n    // Display generated assets\n    const width = this.cameras.main.width\n    const height = this.cameras.main.height\n${assetNames.map((name) => {
+          if (name.includes('logo')) {
+            return `    if (this.textures.exists('${name}')) {\n      this.add.image(width / 2, 50, '${name}').setDisplaySize(100, 100).setOrigin(0.5)\n    }`
+          } else if (name.includes('background')) {
+            return `    if (this.textures.exists('${name}')) {\n      this.add.image(width / 2, height / 2, '${name}').setDisplaySize(width, height).setOrigin(0.5)\n    }`
+          } else if (name.includes('tile')) {
+            return `    // Use ${name} for game tiles/board\n    // Example: if (this.textures.exists('${name}')) { this.add.image(x, y, '${name}') }`
+          } else if (name.includes('marker') || name.includes('x_') || name.includes('o_')) {
+            return `    // Use ${name} for game markers/pieces\n    // Example: if (this.textures.exists('${name}')) { this.add.image(x, y, '${name}') }`
+          } else {
+            return `    // Use ${name} asset\n    // Example: if (this.textures.exists('${name}')) { this.add.image(x, y, '${name}') }`
+          }
+        }).join('\n')}\n`
+        code = code.slice(0, createStart) + assetUsageCode + code.slice(createStart)
+        console.log('GameBao: ✓ Injected asset usage code')
+      } else {
+        console.log('GameBao: Assets already being used in create method')
+      }
+    }
+  }
 
   // Extract scene name from the code or generate one
   const sceneNameMatch = code.match(/class\s+(\w+Scene)\s+extends/)
-  const sceneName = sceneNameMatch ? sceneNameMatch[1].replace('Scene', '').toLowerCase() : 'game'
+  let sceneName = sceneNameMatch ? sceneNameMatch[1].replace('Scene', '').toLowerCase() : gameType.toLowerCase() || 'game'
+  let className = sceneNameMatch ? sceneNameMatch[1] : null
+
+  // If no class found, try to use the expected class name
+  if (!className) {
+    className = sceneClassName
+    console.log('GameBuilder: No scene class found in code, using expected name:', className)
+  }
+
+  console.log('GameBuilder: Extracted scene name:', sceneName, 'class name:', className)
 
   // Ensure the code is properly wrapped and registered
   if (!code.includes('(function()')) {
@@ -198,16 +401,179 @@ Make it a complete, playable game with proper game mechanics, controls, and visu
     code = `(function() {\n${code}\n})()`
   }
 
-  if (!code.includes('window.')) {
+  // Check if window registration exists, if not add it
+  // Always ensure the expected class name is registered
+  const expectedClassName = sceneClassName
+  if (!code.includes(`window.${expectedClassName}`)) {
     // Add global registration if not present
-    const classNameMatch = code.match(/class\s+(\w+Scene)/)
-    if (classNameMatch) {
-      const className = classNameMatch[1]
-      code = code.replace(/(})\(\)/, `  window.${className} = ${className}\n$1)()`)
+    // Try to find the closing of the IIFE and add registration before it
+    const lastBraceIndex = code.lastIndexOf('})')
+    if (lastBraceIndex > 0) {
+      // Insert before the closing }) of the IIFE
+      code = code.slice(0, lastBraceIndex) + `  window.${expectedClassName} = ${expectedClassName}\n` + code.slice(lastBraceIndex)
+    } else {
+      // Fallback: append at the end
+      code = code.replace(/(})\(\)$/, `  window.${expectedClassName} = ${expectedClassName}\n$1)()`)
     }
+    console.log('GameBuilder: Added window registration for:', expectedClassName)
+  }
+
+  // Also register with the extracted className if different
+  if (className && className !== expectedClassName && !code.includes(`window.${className}`)) {
+    const lastBraceIndex = code.lastIndexOf('})')
+    if (lastBraceIndex > 0) {
+      code = code.slice(0, lastBraceIndex) + `  window.${className} = ${className}\n` + code.slice(lastBraceIndex)
+    }
+    console.log('GameBuilder: Also registered alternate class name:', className)
+  }
+
+  // Verify the registration is in the code
+  if (!code.includes(`window.${expectedClassName}`)) {
+    console.warn('GameBuilder: Warning - window registration may be missing for:', expectedClassName)
   }
 
   return { code, sceneName }
+}
+
+/**
+ * Analyzes a game request and determines what assets are needed
+ * This is called BEFORE asset generation to know what to generate
+ */
+export async function determineRequiredAssets(
+  gameType: string,
+  description: string
+): Promise<Array<{ type: string; name: string; description: string }>> {
+  try {
+    let apiKey = await get<string>('openaiKey', '')
+    if (!apiKey && typeof window !== 'undefined' && window.electronAPI?.env) {
+      const envKey = await window.electronAPI.env.get('OPENAI_API_KEY')
+      if (envKey) {
+        apiKey = envKey
+      }
+    }
+
+    if (!apiKey) {
+      console.warn('No API key for asset analysis, using defaults')
+      return getDefaultAssetsForGameType(gameType)
+    }
+
+    let model = await get<string>('model', 'gpt-4o')
+    if (model === 'gpt-5') {
+      model = 'gpt-4o'
+    }
+
+    const prompt = `You are analyzing a game request to determine what visual assets are needed.
+
+Game Type: ${gameType}
+Description: ${description}
+
+List the specific visual assets needed for this game. For example:
+- For Pacman: pacman (player character), ghost_red, ghost_blue, ghost_pink, ghost_orange, dot, power_pellet, wall_tile
+- For Tic-Tac-Toe: x_marker, o_marker, game_tile
+- For Donkey Kong: donkey_kong, mario, barrel, platform, ladder
+
+Return ONLY a JSON array of objects with this structure:
+[
+  {"type": "sprite", "name": "asset_name", "description": "what this asset is"},
+  ...
+]
+
+Valid types are: "sprite", "tile", "marker", "icon" (use "sprite" for characters and objects, "tile" for tiles/backgrounds, "marker" for UI markers, "icon" for small icons).
+
+Be specific and game-appropriate. Don't include generic assets like "game_logo" or "game_background" unless they're actually needed for the gameplay.
+Return ONLY valid JSON, no markdown, no explanations.`
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: 'You are a game asset analyst. Return only valid JSON arrays.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
+    })
+
+    if (!response.ok) {
+      console.warn('Asset analysis failed, using defaults')
+      return getDefaultAssetsForGameType(gameType)
+    }
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content || ''
+    
+    // Extract JSON from markdown if present
+    let jsonStr = content.trim()
+    const jsonMatch = jsonStr.match(/```(?:json)?\n?([\s\S]*?)```/)
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1].trim()
+    }
+
+    try {
+      const assets = JSON.parse(jsonStr)
+      if (Array.isArray(assets) && assets.length > 0) {
+        console.log(`GameBao: AI determined ${assets.length} required assets:`, assets.map(a => a.name))
+        return assets
+      }
+    } catch (parseError) {
+      console.warn('Failed to parse asset requirements, using defaults:', parseError)
+    }
+
+    return getDefaultAssetsForGameType(gameType)
+  } catch (error) {
+    console.error('Error determining required assets:', error)
+    return getDefaultAssetsForGameType(gameType)
+  }
+}
+
+/**
+ * Fallback function that returns default assets for common game types
+ */
+function getDefaultAssetsForGameType(gameType: string): Array<{ type: string; name: string; description: string }> {
+  const lowerType = gameType.toLowerCase()
+  
+  if (lowerType.includes('pacman') || lowerType.includes('pac-man')) {
+    return [
+      { type: 'sprite', name: 'pacman', description: 'Pacman character sprite' },
+      { type: 'sprite', name: 'ghost_red', description: 'Red ghost enemy' },
+      { type: 'sprite', name: 'ghost_blue', description: 'Blue ghost enemy' },
+      { type: 'sprite', name: 'ghost_pink', description: 'Pink ghost enemy' },
+      { type: 'sprite', name: 'ghost_orange', description: 'Orange ghost enemy' },
+      { type: 'sprite', name: 'dot', description: 'Small dot pellet' },
+      { type: 'sprite', name: 'power_pellet', description: 'Power pellet' },
+      { type: 'tile', name: 'wall_tile', description: 'Wall tile for maze' },
+    ]
+  }
+  
+  if (lowerType.includes('tic') || lowerType.includes('tac') || lowerType.includes('toe')) {
+    return [
+      { type: 'sprite', name: 'x_marker', description: 'X marker for tic-tac-toe' },
+      { type: 'sprite', name: 'o_marker', description: 'O marker for tic-tac-toe' },
+      { type: 'sprite', name: 'game_tile', description: 'Game tile/board cell' },
+    ]
+  }
+  
+  if (lowerType.includes('donkey') || lowerType.includes('kong')) {
+    return [
+      { type: 'sprite', name: 'donkey_kong', description: 'Donkey Kong character' },
+      { type: 'sprite', name: 'mario', description: 'Mario character' },
+      { type: 'sprite', name: 'barrel', description: 'Barrel obstacle' },
+      { type: 'sprite', name: 'platform', description: 'Platform tile' },
+      { type: 'sprite', name: 'ladder', description: 'Ladder sprite' },
+    ]
+  }
+  
+  // Generic defaults
+  return [
+    { type: 'sprite', name: 'player', description: 'Player character sprite' },
+    { type: 'sprite', name: 'enemy', description: 'Enemy sprite' },
+  ]
 }
 
 export async function buildGame(input: {
@@ -324,6 +690,12 @@ export async function buildGame(input: {
           // Update description if provided
           if (input.description) {
             gameData.description = input.description
+          }
+          // Always update mainScene to the newly generated scene
+          gameData.mainScene = sceneName
+          // Update game type if it changed
+          if (input.gameType) {
+            gameData.type = input.gameType
           }
         } catch (error) {
           // Use new game data
@@ -577,8 +949,9 @@ function generateTicTacToeCode(description?: string, assets?: Array<{ type: stri
     }
 
     ${hasAssets ? `preload() {
-      // Load assets from game config (passed by runtime)
-      const assets = this.sys.game.config.assets || {}
+      // Load assets from game instance (stored by runtime)
+      const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
+      const assets = gameAssets || {}
       ${xMarkerAsset ? `if (assets.x_marker) {
         this.load.image('x_marker', assets.x_marker)
       }` : ''}
@@ -767,7 +1140,9 @@ function generatePacmanCode(description?: string, assets?: Array<{ type: string;
     }
 
     ${logoAsset ? `preload() {
-      const assets = this.sys.game.config.assets || {}
+      // Access assets from game instance (stored by runtime)
+      const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
+      const assets = gameAssets || {}
       if (assets.game_logo) {
         this.load.image('game_logo', assets.game_logo)
       }

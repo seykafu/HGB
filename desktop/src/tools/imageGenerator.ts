@@ -53,28 +53,64 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
       
       console.log(`GameBao: Generating ${assetSpec.type} asset "${assetSpec.name}" with prompt: ${prompt}`)
       
-      // Call DALL-E API
-      const imageUrl = await generateImageWithDALLE(apiKey, prompt, assetSpec.size)
+      // Try DALL-E first, with fallback to Stability AI if content policy violation
+      let imageUrl = await generateImageWithDALLE(apiKey, prompt, assetSpec.size)
+      
+      // If DALL-E fails with content policy violation, try Stability AI as fallback
+      if (!imageUrl) {
+        console.log(`DALL-E failed for ${assetSpec.name}, trying Stability AI fallback...`)
+        imageUrl = await generateImageWithStabilityAI(prompt, assetSpec.size)
+      }
       
       if (!imageUrl) {
-        console.warn(`Failed to generate image for ${assetSpec.name}`)
+        console.warn(`Failed to generate image for ${assetSpec.name} with both DALL-E and Stability AI`)
         continue
       }
 
-      // Download the image
-      const imageBlob = await fetch(imageUrl).then(res => res.blob())
+      // Handle image download - Stability AI returns data URLs, DALL-E returns regular URLs
+      let imageBlob: Blob
+      if (imageUrl.startsWith('data:')) {
+        // Stability AI returned a data URL - convert to blob
+        const response = await fetch(imageUrl)
+        imageBlob = await response.blob()
+      } else {
+        // DALL-E returned a regular URL - download it
+        if (typeof window !== 'undefined' && window.electronAPI?.download) {
+          try {
+            // Use Electron main process to download (bypasses CORS)
+            const arrayBuffer = await window.electronAPI.download.downloadImage(imageUrl)
+            // Determine MIME type from URL or default to PNG
+            const mimeType = imageUrl.includes('.png') || imageUrl.includes('image/png') ? 'image/png' : 'image/jpeg'
+            imageBlob = new Blob([arrayBuffer], { type: mimeType })
+          } catch (error) {
+            console.warn('Failed to download via Electron, trying direct fetch:', error)
+            // Fallback to direct fetch (may fail due to CORS)
+            imageBlob = await fetch(imageUrl).then(res => res.blob())
+          }
+        } else {
+          // Fallback for non-Electron environments
+          imageBlob = await fetch(imageUrl).then(res => res.blob())
+        }
+      }
       
-      // Determine file extension and path
-      const extension = imageBlob.type.includes('png') ? 'png' : 'jpg'
-      const assetPath = `assets/${assetSpec.name}.${extension}`
+      // Ensure PNG format - convert to PNG if needed
+      let finalBlob = imageBlob
+      if (!imageBlob.type.includes('png')) {
+        console.log(`Converting ${assetSpec.name} to PNG format...`)
+        // Convert to PNG using canvas
+        finalBlob = await convertToPNG(imageBlob)
+      }
+      
+      // Always use PNG extension
+      const assetPath = `assets/${assetSpec.name}.png`
       const storagePath = `${user.id}/${input.gameId}/${assetPath}`
 
-      // Upload to Supabase storage
+      // Upload to Supabase storage with PNG content type
       const { error: uploadError } = await supabase.storage
         .from('gamefiles')
-        .upload(storagePath, imageBlob, {
+        .upload(storagePath, finalBlob, {
           upsert: true,
-          contentType: imageBlob.type,
+          contentType: 'image/png', // Always PNG
         })
 
       if (uploadError) {
@@ -125,28 +161,9 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
         console.log(`Successfully saved asset ${assetSpec.name} to game_files table:`, assetPath)
       }
 
-      // Store asset metadata in Game_Assets table
-      const { error: dbError } = await supabase
-        .from('game_assets')
-        .upsert({
-          game_id: input.gameId,
-          asset_type: assetSpec.type,
-          asset_name: assetSpec.name,
-          file_path: assetPath,
-          storage_path: storagePath,
-          url: assetUrl,
-          width: assetSpec.size?.width,
-          height: assetSpec.size?.height,
-          mime_type: imageBlob.type,
-          size_bytes: imageBlob.size,
-          created_at: new Date().toISOString(),
-        }, {
-          onConflict: 'game_id,asset_name',
-        })
-
-      if (dbError) {
-        console.error(`Failed to save asset metadata for ${assetSpec.name}:`, dbError)
-      }
+      // Note: game_assets table is optional metadata
+      // Assets are already saved to game_files which is the primary storage
+      // We skip saving to game_assets since the table doesn't exist and it's not required
 
       generatedAssets.push({
         type: assetSpec.type,
@@ -203,24 +220,96 @@ function createImagePrompt(
   gameType: string,
   gameDescription: string
 ): string {
-  const baseStyle = 'simple, clean, game asset, pixel art style, transparent background, high quality'
+  // Sanitize prompts to reduce content policy violations
+  const sanitizedGameType = sanitizePrompt(gameType)
+  const sanitizedDescription = sanitizePrompt(gameDescription)
+  const sanitizedAssetDesc = sanitizePrompt(assetSpec.description)
+  
+  // Base style with emphasis on PNG format and transparent background
+  const baseStyle = 'simple, clean, game asset, pixel art style, PNG format, transparent background, no background, alpha channel, high quality, family-friendly, cartoon style'
   
   switch (assetSpec.type) {
     case 'tile':
-      return `${assetSpec.description}. ${baseStyle}, square tile, suitable for ${gameType} game board`
+      return `${sanitizedAssetDesc}. ${baseStyle}, square tile, suitable for ${sanitizedGameType} game board. MUST be PNG with transparent background.`
     case 'marker':
-      return `${assetSpec.description}. ${baseStyle}, game marker, suitable for ${gameType} game`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game marker, suitable for ${sanitizedGameType} game. MUST be PNG with transparent background.`
     case 'logo':
-      return `${assetSpec.description}. ${baseStyle}, game logo, suitable for ${gameType} game`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game logo, suitable for ${sanitizedGameType} game. MUST be PNG with transparent background.`
     case 'background':
-      return `${assetSpec.description}. ${baseStyle}, game background, suitable for ${gameType} game`
+      // Backgrounds can have solid backgrounds, but still PNG format
+      return `${sanitizedAssetDesc}. simple, clean, game background, pixel art style, PNG format, high quality, family-friendly, cartoon style, suitable for ${sanitizedGameType} game. MUST be PNG format.`
     case 'sprite':
-      return `${assetSpec.description}. ${baseStyle}, game sprite, suitable for ${gameType} game`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game sprite, suitable for ${sanitizedGameType} game. MUST be PNG with transparent background, no background color, alpha channel enabled.`
     case 'icon':
-      return `${assetSpec.description}. ${baseStyle}, game icon, suitable for ${gameType} game`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game icon, suitable for ${sanitizedGameType} game. MUST be PNG with transparent background.`
     default:
-      return `${assetSpec.description}. ${baseStyle}, game asset for ${gameType}`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game asset for ${sanitizedGameType}. MUST be PNG with transparent background.`
   }
+}
+
+/**
+ * Converts an image blob to PNG format with transparency support
+ */
+async function convertToPNG(imageBlob: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    
+    if (!ctx) {
+      reject(new Error('Could not get canvas context'))
+      return
+    }
+    
+    img.onload = () => {
+      canvas.width = img.width
+      canvas.height = img.height
+      
+      // Draw image to canvas (preserves transparency if present)
+      ctx.drawImage(img, 0, 0)
+      
+      // Convert to PNG blob
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob)
+        } else {
+          reject(new Error('Failed to convert to PNG'))
+        }
+      }, 'image/png')
+    }
+    
+    img.onerror = () => reject(new Error('Failed to load image for conversion'))
+    img.src = URL.createObjectURL(imageBlob)
+  })
+}
+
+/**
+ * Sanitizes prompts to reduce content policy violations
+ * Only replaces truly problematic words, keeping game-specific terms like "ghost"
+ */
+function sanitizePrompt(text: string): string {
+  if (!text) return text
+  
+  // Only replace truly problematic terms, not game-specific terms
+  // (e.g., "ghost" is fine for Pacman, but "kill" might trigger filters)
+  const replacements: Record<string, string> = {
+    'kill': 'defeat',
+    'death': 'game over',
+    'blood': 'red color',
+    'weapon': 'tool',
+    'gun': 'tool',
+    'shoot': 'aim',
+  }
+  
+  let sanitized = text
+  
+  // Apply replacements (case-insensitive)
+  for (const [problematic, replacement] of Object.entries(replacements)) {
+    const regex = new RegExp(`\\b${problematic}\\b`, 'gi')
+    sanitized = sanitized.replace(regex, replacement)
+  }
+  
+  return sanitized
 }
 
 async function generateImageWithDALLE(
@@ -248,7 +337,7 @@ async function generateImageWithDALLE(
       },
       body: JSON.stringify({
         model: 'dall-e-3',
-        prompt: prompt,
+        prompt: prompt + ' PNG format with transparent background.',
         n: 1,
         size: dalleSizeParam,
         quality: 'standard',
@@ -258,7 +347,20 @@ async function generateImageWithDALLE(
 
     if (!response.ok) {
       const errorText = await response.text()
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {}
+      
       console.error('DALL-E API error:', response.status, errorText)
+      
+      // Check if it's a content policy violation - return null to trigger fallback
+      if (errorData.error?.code === 'content_policy_violation' || 
+          errorData.error?.type === 'image_generation_user_error') {
+        console.warn('DALL-E content policy violation, will try fallback')
+        return null
+      }
+      
       throw new Error(`DALL-E API error: ${response.status}`)
     }
 
@@ -266,6 +368,79 @@ async function generateImageWithDALLE(
     return data.data?.[0]?.url || null
   } catch (error) {
     console.error('DALL-E generation error:', error)
+    return null
+  }
+}
+
+/**
+ * Fallback image generator using Stability AI (Stable Diffusion)
+ * This is used when DALL-E rejects a prompt due to content policy
+ */
+async function generateImageWithStabilityAI(
+  prompt: string,
+  size?: { width: number; height: number }
+): Promise<string | null> {
+  try {
+    // Get Stability AI API key from environment or storage
+    let stabilityKey = ''
+    if (typeof window !== 'undefined' && window.electronAPI?.env) {
+      const envKey = await window.electronAPI.env.get('STABILITY_API_KEY')
+      if (envKey) {
+        stabilityKey = envKey
+      }
+    }
+    
+    // Also check storage
+    if (!stabilityKey) {
+      stabilityKey = await get<string>('stabilityKey', '')
+    }
+
+    if (!stabilityKey) {
+      console.warn('Stability AI API key not found, skipping fallback')
+      return null
+    }
+
+    // Stability AI supports various sizes, default to 1024x1024
+    const width = size?.width || 1024
+    const height = size?.height || 1024
+
+    // Stability AI API endpoint (using v1 for better compatibility)
+    const response = await fetch('https://api.stability.ai/v1/generation/stable-diffusion-xl-1024-v1-0/text-to-image', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${stabilityKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        text_prompts: [{ text: prompt + ' PNG format with transparent background, alpha channel' }],
+        cfg_scale: 7,
+        height,
+        width,
+        steps: 30,
+        samples: 1,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Stability AI API error:', response.status, errorText)
+      return null
+    }
+
+    // Stability AI returns JSON with base64 image
+    const data = await response.json()
+    const base64Image = data.artifacts?.[0]?.base64
+    
+    if (!base64Image) {
+      console.error('Stability AI: No image in response')
+      return null
+    }
+    
+    // Convert base64 to data URL
+    return `data:image/png;base64,${base64Image}`
+  } catch (error) {
+    console.error('Stability AI generation error:', error)
     return null
   }
 }

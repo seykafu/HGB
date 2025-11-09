@@ -149,12 +149,25 @@ export async function saveFiles(
       ? new Blob([file.content], { type: 'application/json' })
       : file.content
 
+    // Determine content type based on file extension
+    let contentType: string | undefined = undefined
+    if (file.path.endsWith('.json')) {
+      contentType = 'application/json'
+    } else if (file.path.match(/\.(png|jpg|jpeg|gif|webp)$/i)) {
+      // For image files, determine MIME type from extension
+      const ext = file.path.toLowerCase().split('.').pop()
+      contentType = ext === 'png' ? 'image/png' :
+                   ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
+                   ext === 'gif' ? 'image/gif' :
+                   ext === 'webp' ? 'image/webp' : 'image/png'
+    }
+
     // Upload to storage
     const { error: uploadError } = await supabase.storage
       .from('gamefiles')
       .upload(storagePath, content, {
         upsert: true,
-        contentType: file.path.endsWith('.json') ? 'application/json' : undefined,
+        contentType,
       })
 
     if (uploadError) {
@@ -230,6 +243,57 @@ export async function listFilePaths(gameId: string): Promise<string[]> {
   return paths
 }
 
+export async function deleteAssets(gameId: string): Promise<void> {
+  const supabase = await getSupabaseClient()
+  const user = await getUser()
+
+  if (!user) {
+    throw new Error('Not authenticated')
+  }
+
+  // Verify game ownership
+  await getGame(gameId)
+
+  // First, get the asset file paths before deleting
+  const { data: fileRecords } = await supabase
+    .from('game_files')
+    .select('path')
+    .eq('game_id', gameId)
+    .like('path', 'assets/%')
+
+  // Delete all asset files from database (files in assets/ directory)
+  const { error: deleteError } = await supabase
+    .from('game_files')
+    .delete()
+    .eq('game_id', gameId)
+    .like('path', 'assets/%')
+
+  if (deleteError) {
+    console.error('Failed to delete assets:', deleteError)
+    throw deleteError
+  }
+
+  // Also try to delete from storage if we have file records
+  if (fileRecords && fileRecords.length > 0) {
+    try {
+      const storagePaths = fileRecords.map(record => `${user.id}/${gameId}/${record.path}`)
+      const { error: storageError } = await supabase.storage
+        .from('gamefiles')
+        .remove(storagePaths)
+
+      if (storageError) {
+        console.warn('Failed to delete assets from storage (non-critical):', storageError)
+      } else {
+        console.log(`GameBao: Deleted ${storagePaths.length} asset(s) from storage`)
+      }
+    } catch (error) {
+      console.warn('Error cleaning up storage (non-critical):', error)
+    }
+  }
+
+  console.log(`GameBao: Deleted all assets for game ${gameId}`)
+}
+
 export async function loadFiles(gameId: string): Promise<Record<string, string>> {
   const supabase = await getSupabaseClient()
   const user = await getUser()
@@ -276,7 +340,7 @@ export async function loadFiles(gameId: string): Promise<Record<string, string>>
   return files
 }
 
-async function calculateSHA256(buffer: ArrayBuffer): Promise<string> {
+export async function calculateSHA256(buffer: ArrayBuffer): Promise<string> {
   // Use Web Crypto API
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
   const hashArray = Array.from(new Uint8Array(hashBuffer))

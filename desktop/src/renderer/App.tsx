@@ -4,6 +4,7 @@ import { Home } from '../windows/Home'
 import { ProjectsList } from '../windows/ProjectsList'
 import { Playground } from '../windows/Playground'
 import { scaffoldProject } from '../services/scaffold'
+import { get, set } from '../lib/storage'
 
 type View = 'home' | 'build' | 'load' | 'playground'
 
@@ -15,6 +16,40 @@ interface AppState {
 
 const App = () => {
   const [state, setState] = useState<AppState>({ view: 'home', gameId: null })
+  const [isRestored, setIsRestored] = useState(false)
+
+  // Restore app state from storage on mount
+  useEffect(() => {
+    const restoreState = async () => {
+      try {
+        const savedState = await get<AppState>('appState', null)
+        if (savedState && savedState.view === 'playground' && savedState.gameId) {
+          console.log('App: Restoring previous session:', savedState)
+          setState(savedState)
+        }
+      } catch (error) {
+        console.error('Failed to restore app state:', error)
+      } finally {
+        setIsRestored(true)
+      }
+    }
+    restoreState()
+  }, [])
+
+  // Save app state to storage whenever it changes
+  useEffect(() => {
+    if (isRestored) {
+      // Only save if we're in playground view (don't save home view)
+      if (state.view === 'playground' && state.gameId) {
+        set('appState', state).catch(error => {
+          console.error('Failed to save app state:', error)
+        })
+      } else if (state.view === 'home') {
+        // Clear saved state when going to home
+        set('appState', null).catch(() => {})
+      }
+    }
+  }, [state, isRestored])
 
   const handleBuildNew = async () => {
     // For now, create a default project
@@ -57,29 +92,45 @@ const App = () => {
     setState({ view: 'home', gameId: null })
   }
 
+  // Show loading state while restoring (only if we might have a saved state)
+  if (!isRestored) {
+    return (
+      <AuthGate>
+        {() => (
+          <div className="w-full h-full flex items-center justify-center bg-[#F8F1E3]">
+            <div className="text-[#2E2A25]">Loading...</div>
+          </div>
+        )}
+      </AuthGate>
+    )
+  }
+
   return (
     <AuthGate>
-      <div className="w-full h-full">
-        {state.view === 'home' && (
-          <Home
-            onBuildNew={handleBuildNew}
-            onLoadGame={handleLoadGame}
-          />
-        )}
-        {state.view === 'load' && (
-          <ProjectsList
-            onOpenGame={handleOpenGame}
-            onBack={handleBack}
-          />
-        )}
-        {state.view === 'playground' && (
-          <Playground
-            gameId={state.gameId}
-            initialPrompt={state.initialPrompt}
-            onBack={handleBack}
-          />
-        )}
-      </div>
+      {({ onOpenSettings }) => (
+        <div className="w-full h-full">
+          {state.view === 'home' && (
+            <Home
+              onBuildNew={handleBuildNew}
+              onLoadGame={handleLoadGame}
+              onOpenSettings={onOpenSettings}
+            />
+          )}
+          {state.view === 'load' && (
+            <ProjectsList
+              onOpenGame={handleOpenGame}
+              onBack={handleBack}
+            />
+          )}
+          {state.view === 'playground' && (
+            <Playground
+              gameId={state.gameId}
+              initialPrompt={state.initialPrompt}
+              onBack={handleBack}
+            />
+          )}
+        </div>
+      )}
     </AuthGate>
   )
 }

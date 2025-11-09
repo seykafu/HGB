@@ -16,5 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exportGame: (data: { gameId: string; gameSlug: string; platform: string; files: Record<string, string> }) =>
       ipcRenderer.invoke('export:game', data),
   },
+  download: {
+    downloadImage: (url: string) => ipcRenderer.invoke('download:image', url),
+  },
 })
 

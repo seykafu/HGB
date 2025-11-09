@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:main": "tsc -p tsconfig.main.json",
+    "build:main": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
     "build:mac": "npm run build && electron-builder --mac",
@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.80.0",
+    "dotenv": "^17.2.3",
     "electron-store": "^10.0.0",
     "phaser": "^3.90.0",
     "react": "^18.3.1",

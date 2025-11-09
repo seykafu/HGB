@@ -15,6 +15,7 @@ import type { DialogueGraph } from '../game/narrative/types'
 import { saveFiles, getGame, loadFiles } from '../services/projects'
 import { exportGame } from '../services/export'
 import { FileTree } from '../components/FileTree'
+import { get, set } from '../lib/storage'
 const TypingAnimation = () => {
   return (
     <div className="flex items-center space-x-2">
@@ -51,6 +52,8 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
   const [fileTreeRefresh, setFileTreeRefresh] = useState(0)
   const [gameStructure, setGameStructure] = useState<{ type?: string; description?: string; scenes?: string[] } | null>(null)
   const [generatedAssets, setGeneratedAssets] = useState<Array<{ type: string; name: string; url: string; path: string }>>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLDivElement>(null)
   const initialPromptSentRef = useRef(false)
@@ -80,24 +83,41 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
     }
   }, [phaserContainer])
 
-  // Load game info
+  // Load game info and chat history
   useEffect(() => {
-    if (gameId) {
-      loadGameInfo()
+    if (!gameId) return
+    
+    const initializeGame = async () => {
+      // Load game info
+      await loadGameInfo()
+      
+      // Load chat history from storage
+      try {
+        const storageKey = `chatHistory_${gameId}`
+        const savedMessages = await get<ChatMessage[]>(storageKey, [])
+        if (savedMessages && savedMessages.length > 0) {
+          console.log(`Playground: Restored ${savedMessages.length} messages from storage`)
+          setMessages(savedMessages)
+          // Mark initial prompt as sent if we have messages
+          initialPromptSentRef.current = true
+        }
+      } catch (error) {
+        console.error('Failed to load chat history:', error)
+      }
     }
-  }, [gameId])
+    
+    initializeGame()
+  }, [gameId]) // Only depend on gameId
 
-  // Send initial prompt only once on mount
+  // Save chat history to storage whenever messages change
   useEffect(() => {
-    if (initialPrompt && !initialPromptSentRef.current && messages.length === 0 && !isLoading && gameId) {
-      initialPromptSentRef.current = true
-      // Use a small delay to ensure component is fully mounted
-      const timer = setTimeout(() => {
-        handleSend(initialPrompt)
-      }, 200)
-      return () => clearTimeout(timer)
+    if (gameId && messages.length > 0) {
+      const storageKey = `chatHistory_${gameId}`
+      set(storageKey, messages).catch(error => {
+        console.error('Failed to save chat history:', error)
+      })
     }
-  }, [initialPrompt, messages.length, isLoading, gameId]) // Include dependencies but use ref to prevent multiple sends
+  }, [messages, gameId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -168,15 +188,53 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
     const messageToSend = messageText || input.trim()
     if (!messageToSend || isLoading || !gameId) return
 
+    // Check if this is a new game build request and if there are existing assets
+    const isGameBuildRequest = /build|create|make|generate|design/i.test(messageToSend) && 
+                               /game/i.test(messageToSend) &&
+                               !/(modify|update|change|edit|add to|update)/i.test(messageToSend)
+    
+    if (isGameBuildRequest) {
+      try {
+        const { listFilePaths } = await import('../services/projects')
+        const existingFiles = await listFilePaths(gameId)
+        const existingAssets = existingFiles.filter(path => path.startsWith('assets/'))
+        
+        if (existingAssets.length > 0) {
+          const confirmed = window.confirm(
+            `This game already has ${existingAssets.length} asset(s) in the assets folder.\n\n` +
+            `Generating new assets will delete the existing ones.\n\n` +
+            `Do you want to proceed?`
+          )
+          
+          if (!confirmed) {
+            // User cancelled - don't proceed
+            return
+          }
+          
+          // User confirmed - delete existing assets
+          const { deleteAssets } = await import('../services/projects')
+          await deleteAssets(gameId)
+          console.log('Playground: Deleted existing assets, proceeding with generation')
+          // Refresh file tree to show assets are deleted
+          setFileTreeRefresh(prev => prev + 1)
+        }
+      } catch (error) {
+        console.error('Playground: Error checking/deleting assets:', error)
+        // Continue anyway - don't block the user
+      }
+    }
+
     const userMessage: ChatMessage = { role: 'user', content: messageToSend }
     setInput('')
     setIsLoading(true)
     setStatusMessage(null)
 
+    // Include the current user message in the conversation history for context
+    const fullConversationHistory = [...messages, userMessage]
     setMessages(prev => [...prev, userMessage])
 
     try {
-      const result = await orchestrate(messageToSend, messages, (status) => {
+      const result = await orchestrate(messageToSend, fullConversationHistory, (status) => {
         setStatusMessage(status)
       }, gameId, () => {
         // Callback when assets are generated - refresh file tree immediately
@@ -272,23 +330,38 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
                 })
                 
                 // Load the script code
+                console.log('Playground: Loading script file for scene:', sceneName)
                 await gameRuntime.loadGameScript(scriptFile, sceneName)
                 
                 // Get the scene class from the global scope (set by the script)
-                const SceneClass = (window as any)[sceneName.charAt(0).toUpperCase() + sceneName.slice(1) + 'Scene'] || 
+                // Try multiple naming patterns
+                const sceneNameCapitalized = sceneName.charAt(0).toUpperCase() + sceneName.slice(1).replace(/[-_]/g, '')
+                const SceneClass = (window as any)[sceneNameCapitalized + 'Scene'] || 
+                                  (window as any)[sceneName + 'Scene'] ||
+                                  (window as any)[sceneNameCapitalized] ||
+                                  (window as any)['MazeScene'] ||
                                   (window as any)['TicTacToeScene'] || 
-                                  (window as any)['GameScene']
+                                  (window as any)['GameScene'] ||
+                                  (window as any)['PacmanScene']
+                
+                console.log('Playground: Looking for scene class:', sceneNameCapitalized + 'Scene')
+                console.log('Playground: Found scene class:', SceneClass ? SceneClass.name : 'none')
+                console.log('Playground: All window scene classes:', Object.keys(window).filter(k => k.endsWith('Scene') || k.includes('Scene')))
                 
                 if (SceneClass) {
                   // Start the game with the custom scene class and assets
                   await gameRuntime.startScene(sceneName, SceneClass, assets)
                 } else {
+                  console.warn('Playground: No scene class found, trying fallback')
                   // Fallback to scene definition
                   const sceneFile = files[`scenes/${sceneName}.json`]
                   if (sceneFile) {
                     const scene = JSON.parse(sceneFile)
                     await gameRuntime.loadScene(scene)
                     await gameRuntime.startScene(sceneName)
+                  } else {
+                    console.error('Playground: No scene class or scene definition found for:', sceneName)
+                    console.error('Playground: Available files:', Object.keys(files))
                   }
                 }
               } else {
@@ -377,6 +450,9 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
           }
         })
         
+        console.log('Playground: Collected assets for game:', Object.keys(assets))
+        console.log('Playground: Asset URLs:', assets)
+        
         // Clear any previously loaded scripts from window
         delete (window as any)[sceneName.charAt(0).toUpperCase() + sceneName.slice(1) + 'Scene']
         delete (window as any)['TicTacToeScene']
@@ -386,9 +462,25 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
         await gameRuntime.loadGameScript(scriptFile, sceneName)
         
         // Get the scene class from the global scope (set by the script)
-        const SceneClass = (window as any)[sceneName.charAt(0).toUpperCase() + sceneName.slice(1) + 'Scene'] || 
+        // Try multiple naming patterns to find the scene class
+        const sceneNameCapitalized = sceneName.charAt(0).toUpperCase() + sceneName.slice(1)
+        const SceneClass = (window as any)[sceneNameCapitalized + 'Scene'] || 
+                          (window as any)[sceneName.charAt(0).toUpperCase() + sceneName.slice(1).replace(/([A-Z])/g, '$1') + 'Scene'] ||
+                          (window as any)['TictactoeScene'] ||
                           (window as any)['TicTacToeScene'] || 
+                          (window as any)['PacmanScene'] ||
+                          (window as any)['MazeScene'] ||
                           (window as any)['GameScene']
+        
+        console.log('Playground: Looking for scene class. Scene name:', sceneName, 'Trying:', [
+          sceneNameCapitalized + 'Scene',
+          'TictactoeScene',
+          'TicTacToeScene',
+          'PacmanScene',
+          'MazeScene',
+          'GameScene'
+        ])
+        console.log('Playground: Found scene class:', SceneClass ? SceneClass.name : 'none')
         
         if (SceneClass) {
           // Start the game with the custom scene class and assets
@@ -418,6 +510,123 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
       console.error('Failed to refresh preview:', error)
       alert(`Failed to refresh preview: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (!files || files.length === 0 || !gameId) return
+
+    // Limit to 10 PNG files
+    const pngFiles = Array.from(files).filter(file => 
+      file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')
+    ).slice(0, 10)
+
+    if (pngFiles.length === 0) {
+      alert('Please select PNG files only. Files must be in PNG format with transparent backgrounds for best results.')
+      return
+    }
+
+    if (files.length > 10) {
+      alert(`You selected ${files.length} files. Only the first 10 PNG files will be uploaded.`)
+    }
+
+    setIsUploading(true)
+    try {
+      const { saveFiles } = await import('../services/projects')
+      
+      // Prepare files for upload
+      // Check existing assets to avoid duplicates
+      const { listFilePaths } = await import('../services/projects')
+      const existingFiles = await listFilePaths(gameId)
+      const existingAssetNames = new Set(existingFiles.filter(p => p.startsWith('assets/')).map(p => p.replace('assets/', '')))
+      
+      // Validate and ensure PNG format for all files
+      const filesToUpload = await Promise.all(pngFiles.map(async (file, index) => {
+        // Use the original filename, sanitized
+        let sanitizedName = file.name
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .toLowerCase()
+          .replace(/\.png$/i, '') // Remove .png extension (we'll add it back)
+        
+        // Handle duplicate names
+        let finalName = sanitizedName
+        let counter = 1
+        while (existingAssetNames.has(`${finalName}.png`)) {
+          finalName = `${sanitizedName}_${counter}`
+          counter++
+        }
+        existingAssetNames.add(`${finalName}.png`) // Track for this batch
+        
+        const assetPath = `assets/${finalName}.png`
+        
+        // Ensure the file is in PNG format
+        let fileContent: Blob = file
+        if (!file.type.includes('png')) {
+          // Convert to PNG if needed
+          fileContent = await convertImageToPNG(file)
+        }
+        
+        return {
+          path: assetPath,
+          content: fileContent,
+        }
+      }))
+
+      // Upload files
+      await saveFiles(gameId, filesToUpload)
+      
+      console.log(`Playground: Uploaded ${filesToUpload.length} asset(s)`)
+      
+      // Refresh file tree
+      setFileTreeRefresh(prev => prev + 1)
+      
+      // Show success message
+      alert(`Successfully uploaded ${filesToUpload.length} asset(s) to the assets folder!\n\nNote: For best results, ensure your PNG files have transparent backgrounds.`)
+      
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    } catch (error) {
+      console.error('Failed to upload files:', error)
+      alert(`Failed to upload files: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  // Helper function to convert image to PNG format
+  const convertImageToPNG = async (file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      
+      if (!ctx) {
+        reject(new Error('Could not get canvas context'))
+        return
+      }
+      
+      img.onload = () => {
+        canvas.width = img.width
+        canvas.height = img.height
+        
+        // Draw image to canvas (preserves transparency if present)
+        ctx.drawImage(img, 0, 0)
+        
+        // Convert to PNG blob
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error('Failed to convert to PNG'))
+          }
+        }, 'image/png')
+      }
+      
+      img.onerror = () => reject(new Error('Failed to load image for conversion'))
+      img.src = URL.createObjectURL(file)
+    })
   }
 
   return (
@@ -526,27 +735,26 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
             {messages.length === 0 && !isLoading && (
               <div className="space-y-3">
                 <Bubble from="npc">
-                  <p>Describe your 2D narrative game (setting, main character, goals).</p>
+                  <p>Welcome! Try one of these prompts to get started:</p>
                 </Bubble>
                 <div className="space-y-2">
-                  <p className="text-xs text-[#2E2A25]/60 mb-2">Example prompts:</p>
                   <button
-                    onClick={() => handleSend('How do I publish my game to multiple platforms?')}
+                    onClick={() => handleSend('Build me a pacman game.')}
                     className="w-full text-left px-3 py-2 rounded-lg bg-[#E9C46A]/20 hover:bg-[#E9C46A]/30 border border-[#533F31]/20 text-sm text-[#2E2A25] transition-colors"
                   >
-                    How do I publish my game to multiple platforms?
+                    Build me a pacman game.
                   </button>
                   <button
-                    onClick={() => handleSend('How do I run an AI-based NPC agent in my game?')}
+                    onClick={() => handleSend('Build me a Donkey Kong game.')}
                     className="w-full text-left px-3 py-2 rounded-lg bg-[#E9C46A]/20 hover:bg-[#E9C46A]/30 border border-[#533F31]/20 text-sm text-[#2E2A25] transition-colors"
                   >
-                    How do I run an AI-based NPC agent in my game?
+                    Build me a Donkey Kong game.
                   </button>
                   <button
-                    onClick={() => handleSend('How do I get started?')}
+                    onClick={() => handleSend('Build me a game of Tic-Tac-Toe.')}
                     className="w-full text-left px-3 py-2 rounded-lg bg-[#E9C46A]/20 hover:bg-[#E9C46A]/30 border border-[#533F31]/20 text-sm text-[#2E2A25] transition-colors"
                   >
-                    How do I get started?
+                    Build me a game of Tic-Tac-Toe.
                   </button>
                 </div>
               </div>
@@ -586,14 +794,24 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
+                  // Only prevent default for Enter without Shift
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     handleSend()
                   }
+                  // Don't prevent default for other keys - allow normal typing
+                }}
+                onKeyPress={(e) => {
+                  // Allow all key presses to go through
+                }}
+                onInput={(e) => {
+                  // Ensure input events work
                 }}
                 placeholder="Add an NPC, create a scene, branch dialogue..."
                 className="flex-1 min-h-[60px] max-h-[120px]"
                 rows={2}
+                autoComplete="off"
+                spellCheck={false}
               />
               <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading}>
                 Send
@@ -614,7 +832,32 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
             className="p-4 pt-12 border-b border-[#533F31]/20 bg-[#FBF7EF] overflow-y-auto min-h-0"
             style={{ height: `${designBoardHeight}%` }}
           >
-            <h3 className="font-medium text-[#2E2A25] mb-4">Design Board</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium text-[#2E2A25]">Design Board</h3>
+              <div className="flex gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".png,image/png"
+                  multiple
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  id="asset-upload-input"
+                />
+                <Button
+                  variant="outlined"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading || !gameId}
+                  title="Upload up to 10 PNG files with transparent backgrounds"
+                >
+                  {isUploading ? 'Uploading...' : 'Upload Assets'}
+                </Button>
+                <p className="text-xs text-[#2E2A25]/60">
+                  PNG files only (up to 10). Transparent backgrounds recommended for best results.
+                </p>
+              </div>
+            </div>
             {generatedAssets.length > 0 && !selectedFile ? (
               <div className="space-y-4">
                 <div className="bg-[#F8F1E3] rounded-lg p-4 border border-[#533F31]/20">

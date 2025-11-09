@@ -1,12 +1,32 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { join, dirname } from 'path'
+import { join, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { request } from 'http'
 import Store from 'electron-store'
+import dotenv from 'dotenv'
 
 // ES module equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+
+// Load environment variables from .env.local
+// Try multiple possible locations:
+// 1. Root directory (parent of desktop/) - for development
+// 2. Desktop directory - if .env.local is in desktop/
+// 3. Current working directory
+const possiblePaths = [
+  resolve(__dirname, '../../.env.local'),  // Root directory
+  resolve(__dirname, '../.env.local'),     // Desktop directory
+  resolve(process.cwd(), '.env.local'),     // Current working directory
+]
+
+for (const envPath of possiblePaths) {
+  const result = dotenv.config({ path: envPath })
+  if (!result.error) {
+    console.log(`Loaded environment variables from: ${envPath}`)
+    break
+  }
+}
 
 const store = new Store() as any
 
@@ -103,7 +123,42 @@ ipcMain.handle('storage:remove', async (_, key: string) => {
 
 // IPC handler for environment variables
 ipcMain.handle('env:get', async (_, key: string) => {
-  return process.env[key] || null
+  const value = process.env[key] || null
+  if (key === 'SUPABASE_ANON_KEY') {
+    console.log(`env:get ${key}: ${value ? 'found' : 'not found'}`)
+  }
+  return value
+})
+
+// IPC handler for downloading images (bypasses CORS)
+ipcMain.handle('download:image', async (_, url: string): Promise<ArrayBuffer> => {
+  const https = await import('https')
+  const http = await import('http')
+  
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url)
+    const client = urlObj.protocol === 'https:' ? https : http
+    
+    const req = client.get(url, (res) => {
+      if (res.statusCode !== 200) {
+        reject(new Error(`Failed to download image: ${res.statusCode}`))
+        return
+      }
+      
+      const chunks: Buffer[] = []
+      res.on('data', (chunk) => chunks.push(chunk))
+      res.on('end', () => {
+        const buffer = Buffer.concat(chunks)
+        resolve(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength))
+      })
+    })
+    
+    req.on('error', reject)
+    req.setTimeout(30000, () => {
+      req.destroy()
+      reject(new Error('Download timeout'))
+    })
+  })
 })
 
 // IPC handler for game export

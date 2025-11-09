@@ -1,18 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Card } from '../ui/components/Card'
 import { Button } from '../ui/components/Button'
-import { Input } from '../ui/components/Input'
 import { get, set } from '../lib/storage'
 
 interface SettingsProps {
   onBack: () => void
+  onSave?: () => void
 }
 
-export const Settings = ({ onBack }: SettingsProps) => {
-  const [supabaseUrl, setSupabaseUrl] = useState('')
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState('')
-  const [openaiKey, setOpenaiKey] = useState('')
-  const [model, setModel] = useState('gpt-5')
+export const Settings = ({ onBack, onSave }: SettingsProps) => {
+  const [model, setModel] = useState('gpt-4o')
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -21,23 +18,13 @@ export const Settings = ({ onBack }: SettingsProps) => {
   }, [])
 
   const loadSettings = async () => {
-    const defaultUrl = 'https://msomzmvhvgsxfxrpvrzp.supabase.co'
-    const url = await get<string>('supabaseUrl', defaultUrl)
-    
-    // Try to get anon key from environment variable
-    let key = await get<string>('supabaseAnonKey', '')
-    if (!key && typeof window !== 'undefined' && window.electronAPI?.env) {
-      const envKey = await window.electronAPI.env.get('SUPABASE_ANON_KEY')
-      if (envKey) {
-        key = envKey
-      }
+    let m = await get<string>('model', 'gpt-4o')
+    // Auto-migrate from GPT-5 to GPT-4o if GPT-5 is selected (requires org verification)
+    if (m === 'gpt-5') {
+      console.log('Settings: Auto-migrating from GPT-5 to GPT-4o (GPT-5 requires organization verification)')
+      m = 'gpt-4o'
+      await set('model', 'gpt-4o') // Save the migration
     }
-    
-    const openai = await get<string>('openaiKey', '')
-    const m = await get<string>('model', 'gpt-5')
-    setSupabaseUrl(url || defaultUrl)
-    setSupabaseAnonKey(key)
-    setOpenaiKey(openai)
     setModel(m)
   }
 
@@ -45,12 +32,16 @@ export const Settings = ({ onBack }: SettingsProps) => {
     setLoading(true)
     setSaved(false)
     try {
-      await set('supabaseUrl', supabaseUrl)
-      await set('supabaseAnonKey', supabaseAnonKey)
-      await set('openaiKey', openaiKey)
       await set('model', model)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
+      
+      // Call onSave callback if provided
+      if (onSave) {
+        setTimeout(() => {
+          onSave()
+        }, 500)
+      }
     } catch (error) {
       alert(`Failed to save settings: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
@@ -69,79 +60,26 @@ export const Settings = ({ onBack }: SettingsProps) => {
         </div>
 
         <div className="space-y-6">
-          {/* Supabase Configuration */}
+          {/* Model Selection */}
           <div>
-            <h2 className="font-medium text-lg text-[#2E2A25] mb-4">Supabase Configuration</h2>
+            <h2 className="font-medium text-lg text-[#2E2A25] mb-4">AI Model</h2>
             <p className="text-sm text-[#2E2A25]/70 mb-4">
-              Required for authentication and game storage. Get these from your Supabase project dashboard.
+              Select the AI model to use for game generation and chat.
             </p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#533F31] mb-2">
-                  Supabase URL
-                </label>
-                <Input
-                  type="text"
-                  value={supabaseUrl}
-                  onChange={(e) => setSupabaseUrl(e.target.value)}
-                  placeholder="https://xxxxx.supabase.co"
-                />
-                <p className="text-xs text-[#2E2A25]/50 mt-1">
-                  Found in Settings → API → Project URL
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[#533F31] mb-2">
-                  Supabase Anon Key
-                </label>
-                <Input
-                  type="password"
-                  value={supabaseAnonKey}
-                  onChange={(e) => setSupabaseAnonKey(e.target.value)}
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                />
-                <p className="text-xs text-[#2E2A25]/50 mt-1">
-                  Found in Settings → API → anon/public key
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* OpenAI Configuration */}
-          <div>
-            <h2 className="font-medium text-lg text-[#2E2A25] mb-4">OpenAI Configuration</h2>
-            <p className="text-sm text-[#2E2A25]/70 mb-4">
-              Required for AI chat functionality. You can also set OPENAI_API_KEY environment variable.
-            </p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#533F31] mb-2">
-                  OpenAI API Key
-                </label>
-                <Input
-                  type="password"
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  placeholder="sk-..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[#533F31] mb-2">
-                  Model
-                </label>
-                <select
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-[#FBF7EF] border border-[#533F31]/20 text-[#2E2A25]"
-                >
-                  <option value="gpt-5">GPT-5</option>
-                  <option value="gpt-4o-mini">GPT-4o Mini</option>
-                  <option value="gpt-4o">GPT-4o</option>
-                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-[#533F31] mb-2">
+                Model
+              </label>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-[#FBF7EF] border border-[#533F31]/20 text-[#2E2A25]"
+              >
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                <option value="gpt-5">GPT-5</option>
+              </select>
             </div>
           </div>
 
