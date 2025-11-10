@@ -13,7 +13,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
 
     if (mode === 'proxy') {
       const url = await get<string>('proxyUrl', 'http://localhost:3000/api/chat')
-      console.log('GameBao Desktop: Calling proxy API:', url, 'with messages:', messages.length)
+      console.log('Himalayan Game Builder Desktop: Calling proxy API:', url, 'with messages:', messages.length)
       
       try {
         const res = await fetch(url, {
@@ -27,16 +27,16 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
         const responseText = await res.text()
         
         if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html') || contentType.includes('text/html')) {
-          console.error('GameBao: Received HTML instead of JSON. This usually means the API requires authentication.')
+          console.error('Himalayan Game Builder: Received HTML instead of JSON. This usually means the API requires authentication.')
           throw new Error('API requires authentication. Please use "Direct OpenAI" mode in Options, or ensure your Next.js API route allows unauthenticated access.')
         }
 
         if (!res.ok) {
-          console.error('GameBao: Proxy error:', res.status, responseText.substring(0, 200))
+          console.error('Himalayan Game Builder: Proxy error:', res.status, responseText.substring(0, 200))
           throw new Error(`Proxy error: ${res.status} ${res.statusText}`)
         }
 
-        console.log('GameBao: Response content-type:', contentType)
+        console.log('Himalayan Game Builder: Response content-type:', contentType)
         
         // Check if response is streaming
         if (contentType.includes('text/event-stream') || contentType.includes('text/stream')) {
@@ -77,7 +77,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
           })
         } catch (parseError) {
           // If it's not JSON, treat the whole response as text
-          console.log('GameBao: Response is plain text, treating as message:', responseText.substring(0, 100))
+          console.log('Himalayan Game Builder: Response is plain text, treating as message:', responseText.substring(0, 100))
           return new ReadableStream({
             start(controller) {
               const encoder = new TextEncoder()
@@ -90,7 +90,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
         }
       } catch (fetchError) {
         // If proxy fails, suggest using Direct OpenAI mode
-        console.error('GameBao: Proxy fetch error:', fetchError)
+        console.error('Himalayan Game Builder: Proxy fetch error:', fetchError)
         const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError)
         
         // Check if user has OpenAI key configured for fallback
@@ -103,7 +103,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
           }
         }
         if (key) {
-          console.log('GameBao: Proxy failed, falling back to Direct OpenAI mode')
+          console.log('Himalayan Game Builder: Proxy failed, falling back to Direct OpenAI mode')
           // Fall through to Direct OpenAI mode
         } else {
           // For desktop app, provide more helpful error message
@@ -123,7 +123,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
       const envKey = await window.electronAPI.env.get('OPENAI_API_KEY')
       if (envKey) {
         key = envKey
-        console.log('GameBao Desktop: Using OPENAI_API_KEY from environment variable')
+        console.log('Himalayan Game Builder Desktop: Using OPENAI_API_KEY from environment variable')
       }
     }
     if (!key) {
@@ -131,7 +131,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
     }
 
     let model = await get<string>('model', 'gpt-5')
-    console.log('GameBao: Calling OpenAI API directly with model:', model)
+    console.log('Himalayan Game Builder: Calling OpenAI API directly with model:', model)
     
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -148,7 +148,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
 
     if (!res.ok) {
       const errorText = await res.text()
-      console.error('GameBao: OpenAI error:', res.status, errorText)
+      console.error('Himalayan Game Builder: OpenAI error:', res.status, errorText)
       let errorMessage = `OpenAI error: ${res.status} ${res.statusText}`
       try {
         const errorData = JSON.parse(errorText)
@@ -244,7 +244,7 @@ export async function streamFromBackend(messages: ChatMessage[]): Promise<Readab
       },
     })
   } catch (error) {
-    console.error('GameBao: Stream error:', error)
+    console.error('Himalayan Game Builder: Stream error:', error)
     // Re-throw with more context
     if (error instanceof Error) {
       throw error

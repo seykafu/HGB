@@ -14,14 +14,14 @@ export class NpcWebSocket {
         const ws = new WebSocket(url)
 
         ws.onopen = () => {
-          console.log('GameBao: WebSocket connected')
+          console.log('Himalayan Game Builder: WebSocket connected')
           this.ws = ws
           this.reconnectAttempts = 0
           resolve(ws)
         }
 
         ws.onerror = (error) => {
-          console.error('GameBao: WebSocket error', error)
+          console.error('Himalayan Game Builder: WebSocket error', error)
           reject(error)
         }
 

@@ -6,7 +6,7 @@ import type { DevtoolsQueryInput, ToolResult } from './schema'
 export async function getDevtools(input: DevtoolsQueryInput): Promise<ToolResult> {
   // In Electron, we don't have access to browser DevTools in the same way
   // This is a placeholder that returns empty data
-  console.log('GameBao Desktop: DevTools query requested:', input)
+  console.log('Himalayan Game Builder Desktop: DevTools query requested:', input)
   
   return {
     ok: true,

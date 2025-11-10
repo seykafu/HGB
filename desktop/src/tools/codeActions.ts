@@ -20,7 +20,7 @@ public class NPCController : MonoBehaviour
     void Start()
     {
         agent = GetComponent<NavMeshAgent>();
-        // Listen for GameBao actions
+        // Listen for Himalayan Game Builder actions
         StartCoroutine(ListenForActions());
     }
     
@@ -71,7 +71,7 @@ public:
         '2. Set up NavMesh bounds volume',
         '3. Create Behavior Tree for NPC wandering',
         '4. Implement WebSocket or HTTP listener',
-        '5. Connect to GameBao actions',
+        '5. Connect to Himalayan Game Builder actions',
       ]
     } else {
       code = `// ${framework} integration guide
@@ -80,13 +80,13 @@ public:
 1. Set up NPC entity/spawn system
 2. Configure navigation mesh or pathfinding
 3. Create dialogue/UI system
-4. Connect to GameBao via WebSocket or HTTP
-5. Parse and execute actions from GameBao`
+4. Connect to Himalayan Game Builder via WebSocket or HTTP
+5. Parse and execute actions from Himalayan Game Builder`
       checklist = [
         '1. Review engine documentation',
         '2. Set up NPC entity system',
         '3. Implement communication bridge',
-        '4. Test with GameBao extension',
+        '4. Test with Himalayan Game Builder extension',
       ]
     }
 

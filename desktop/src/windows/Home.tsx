@@ -34,10 +34,10 @@ export const Home = ({ onBuildNew, onLoadGame, onOpenSettings }: HomeProps) => {
           <Sparkle className="absolute -bottom-2 right-0 h-5 w-5 text-[#E9C46A] animate-pulseSoft delay-100" />
         </div>
         <h1 className="font-display text-4xl tracking-tight text-[#2E2A25] mb-2">
-          GameBao
+          Himalayan Game Builder
         </h1>
         <p className="text-lg text-[#2E2A25]/70">
-          Build 2D narrative games with AI
+          Build 2D games with AI
         </p>
       </div>
 

@@ -46,7 +46,7 @@ export default function Login({ onOpenSettings }: LoginProps) {
             <Sparkle className="absolute -bottom-1 right-0 h-4 w-4 text-[#E9C46A] animate-pulseSoft delay-100" />
           </div>
           <h1 className="font-display text-2xl tracking-tight text-[#2E2A25] mb-2">
-            GameBao
+            Himalayan Game Builder
           </h1>
           <p className="text-sm text-[#2E2A25]/70">
             {isSignUp ? 'Create your account' : 'Sign in to continue'}

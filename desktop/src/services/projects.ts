@@ -231,9 +231,9 @@ export async function listFilePaths(gameId: string): Promise<string[]> {
   }
 
   const paths = (fileRecords || []).map(record => record.path)
-  console.log(`GameBao: Found ${paths.length} files for game ${gameId}:`, paths)
+  console.log(`Himalayan Game Builder: Found ${paths.length} files for game ${gameId}:`, paths)
   if (paths.length > 0) {
-    console.log('GameBao: File paths breakdown:', {
+    console.log('Himalayan Game Builder: File paths breakdown:', {
       assets: paths.filter(p => p.startsWith('assets/')),
       scripts: paths.filter(p => p.startsWith('scripts/')),
       scenes: paths.filter(p => p.startsWith('scenes/')),
@@ -284,14 +284,14 @@ export async function deleteAssets(gameId: string): Promise<void> {
       if (storageError) {
         console.warn('Failed to delete assets from storage (non-critical):', storageError)
       } else {
-        console.log(`GameBao: Deleted ${storagePaths.length} asset(s) from storage`)
+        console.log(`Himalayan Game Builder: Deleted ${storagePaths.length} asset(s) from storage`)
       }
     } catch (error) {
       console.warn('Error cleaning up storage (non-critical):', error)
     }
   }
 
-  console.log(`GameBao: Deleted all assets for game ${gameId}`)
+  console.log(`Himalayan Game Builder: Deleted all assets for game ${gameId}`)
 }
 
 export async function loadFiles(gameId: string): Promise<Record<string, string>> {

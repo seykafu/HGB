@@ -20,7 +20,7 @@ export interface OrchestrateResult {
   onAssetsGenerated?: () => void // Callback when assets are generated
 }
 
-const ORCHESTRATOR_SYSTEM_PROMPT = `You are the Orchestrator for GameBao, an indie game AI Copilot. Your job is to route user requests to the right tools:
+const ORCHESTRATOR_SYSTEM_PROMPT = `You are the Orchestrator for Himalayan Game Builder, an indie game AI Copilot. Your job is to route user requests to the right tools:
 
 CRITICAL ROUTING RULES:
 - If the user asks to "build", "create", "make", "generate", or "design" a GAME (e.g., "build a tic-tac-toe game", "create a simple adventure game", "make me a puzzle game"), you MUST use **buildGame** tool. DO NOT use proposeCode or outputSnippets for game creation requests.
@@ -118,10 +118,10 @@ export async function orchestrate(
   
   if (isAnyGameRequest && gameId) {
     if (isGameBuildRequest) {
-      console.log('GameBao: Detected game-building request, forcing multi-modal workflow')
+      console.log('Himalayan Game Builder: Detected game-building request, forcing multi-modal workflow')
       onStatusUpdate?.('Generating game assets...')
     } else {
-      console.log('GameBao: Detected game modification request, forcing buildGame tool')
+      console.log('Himalayan Game Builder: Detected game modification request, forcing buildGame tool')
       onStatusUpdate?.('Updating game...')
     }
     
@@ -151,7 +151,7 @@ export async function orchestrate(
         const gameTypeMatch = userText.match(/(?:build|create|make|generate|design).*?(?:a|an|the)?\s*([a-z]+)\s+game/i)
         if (gameTypeMatch && gameTypeMatch[1]) {
           gameType = gameTypeMatch[1]
-          console.log(`GameBao: Detected game type from description: ${gameType}`)
+          console.log(`Himalayan Game Builder: Detected game type from description: ${gameType}`)
         }
       }
       
@@ -163,9 +163,9 @@ export async function orchestrate(
           const { listFilePaths } = await import('../services/projects')
           const existingFiles = await listFilePaths(gameId)
           existingAssetsCount = existingFiles.filter(p => p.startsWith('assets/')).length
-          console.log(`GameBao: Found ${existingAssetsCount} existing assets for game`)
+          console.log(`Himalayan Game Builder: Found ${existingAssetsCount} existing assets for game`)
         } catch (error) {
-          console.warn('GameBao: Could not check existing assets:', error)
+          console.warn('Himalayan Game Builder: Could not check existing assets:', error)
         }
       }
       
@@ -183,7 +183,7 @@ export async function orchestrate(
           const requiredAssets = await determineRequiredAssets(gameType, description)
           
           if (requiredAssets.length > 0) {
-            console.log(`GameBao: Determined ${requiredAssets.length} required assets:`, requiredAssets.map(a => a.name))
+            console.log(`Himalayan Game Builder: Determined ${requiredAssets.length} required assets:`, requiredAssets.map(a => a.name))
             
             // Step 2: Generate the required assets
             onStatusUpdate?.('Generating game assets with AI...')
@@ -200,30 +200,30 @@ export async function orchestrate(
             
             if (assetsResult.ok && assetsResult.data?.assets) {
               generatedAssets = assetsResult.data.assets
-              console.log(`GameBao: Generated ${generatedAssets.length} assets for game`)
-              console.log(`GameBao: Asset paths:`, generatedAssets.map(a => a.path))
+              console.log(`Himalayan Game Builder: Generated ${generatedAssets.length} assets for game`)
+              console.log(`Himalayan Game Builder: Asset paths:`, generatedAssets.map(a => a.path))
               onStatusUpdate?.('Assets generated! Building game...')
               // Assets are now saved to game_files table - trigger refresh callback
               if (onAssetsGenerated) {
-                console.log('GameBao: Triggering file tree refresh callback')
+                console.log('Himalayan Game Builder: Triggering file tree refresh callback')
                 onAssetsGenerated()
               }
             } else {
-              console.warn('GameBao: Asset generation failed, continuing without assets')
-              console.warn('GameBao: Asset generation result:', assetsResult)
+              console.warn('Himalayan Game Builder: Asset generation failed, continuing without assets')
+              console.warn('Himalayan Game Builder: Asset generation result:', assetsResult)
               if (assetsResult.error) {
-                console.error('GameBao: Asset generation error details:', assetsResult.error)
+                console.error('Himalayan Game Builder: Asset generation error details:', assetsResult.error)
               }
             }
           } else {
-            console.log('GameBao: No assets required for this game type')
+            console.log('Himalayan Game Builder: No assets required for this game type')
           }
         } catch (error) {
-          console.error('GameBao: Asset generation error:', error)
+          console.error('Himalayan Game Builder: Asset generation error:', error)
           // Continue without assets if generation fails
         }
       } else {
-        console.log(`GameBao: Skipping asset generation (isBuildRequest: ${isGameBuildRequest}, isModification: ${isGameModificationRequest}, existingAssets: ${existingAssetsCount})`)
+        console.log(`Himalayan Game Builder: Skipping asset generation (isBuildRequest: ${isGameBuildRequest}, isModification: ${isGameModificationRequest}, existingAssets: ${existingAssetsCount})`)
       }
       
       // Proceed with buildGame (with or without assets)
@@ -345,7 +345,7 @@ export async function orchestrate(
     const envKey = await window.electronAPI.env.get('OPENAI_API_KEY')
     if (envKey) {
       key = envKey
-      console.log('GameBao Desktop: Using OPENAI_API_KEY from environment variable in orchestrator')
+      console.log('Himalayan Game Builder Desktop: Using OPENAI_API_KEY from environment variable in orchestrator')
     }
   }
   const backendMode = await get<string>('backendMode', 'direct')
@@ -356,13 +356,13 @@ export async function orchestrate(
   const isDocQuestion = !isGameModificationRequest && /(how|what|where|when|why|documentation|api|unity|unreal|frostbite|guide|tutorial|help|learn)/i.test(userText)
   
   if (!key || backendMode === 'proxy') {
-    console.log('GameBao: Using fallback mode (no tool calling)')
+    console.log('Himalayan Game Builder: Using fallback mode (no tool calling)')
     
     // If it's a documentation question, try to use searchDocs directly
     if (isDocQuestion) {
       try {
         onStatusUpdate?.('Analyzing documents...')
-        console.log('GameBao: Detected doc question, using searchDocs directly')
+        console.log('Himalayan Game Builder: Detected doc question, using searchDocs directly')
         // Infer engine from query
         let engine: 'unity' | 'unreal' | 'frostbite' | 'auto' = 'auto'
         if (/unity/i.test(userText)) engine = 'unity'
@@ -398,7 +398,7 @@ export async function orchestrate(
           return { stream, citations, generatedAssets: generatedAssets.length > 0 ? generatedAssets : undefined, onAssetsGenerated }
         }
       } catch (error) {
-        console.warn('GameBao: Direct searchDocs failed, falling back to regular mode:', error)
+        console.warn('Himalayan Game Builder: Direct searchDocs failed, falling back to regular mode:', error)
       }
     }
     
@@ -550,7 +550,7 @@ export async function orchestrate(
     }
   } catch (error) {
     // If tool calling fails, fallback to regular streaming
-    console.warn('GameBao: Tool calling failed, falling back to regular mode:', error)
+    console.warn('Himalayan Game Builder: Tool calling failed, falling back to regular mode:', error)
     onStatusUpdate?.('Processing...')
     // Build fallback messages with full conversation history
     const lastMessage = conversationHistory[conversationHistory.length - 1]

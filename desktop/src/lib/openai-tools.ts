@@ -31,7 +31,7 @@ export async function callWithToolsWithCitations(
       const envKey = await window.electronAPI.env.get('OPENAI_API_KEY')
       if (envKey) {
         key = envKey
-        console.log('GameBao Desktop: Using OPENAI_API_KEY from environment variable for tool calling')
+        console.log('Himalayan Game Builder Desktop: Using OPENAI_API_KEY from environment variable for tool calling')
       }
     }
     
@@ -233,7 +233,7 @@ export async function callWithToolsWithCitations(
       },
     })
   } catch (error) {
-    console.error('GameBao: Tool calling error:', error)
+    console.error('Himalayan Game Builder: Tool calling error:', error)
     throw error
   }
 }

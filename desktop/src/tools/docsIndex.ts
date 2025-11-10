@@ -10,7 +10,7 @@ interface DocChunk {
   embedding?: number[]
 }
 
-const DB_NAME = 'gamebao-docs'
+const DB_NAME = 'himalayan-game-builder-docs'
 const STORE_NAME = 'chunks'
 
 async function getDB(): Promise<IDBDatabase> {
@@ -156,7 +156,7 @@ export async function initializeDocsIndex(): Promise<void> {
     countRequest.onsuccess = () => {
       if (countRequest.result > 0) {
         // Already indexed - but check if we should re-index
-        console.log(`GameBao: Docs already indexed (${countRequest.result} chunks)`)
+        console.log(`Himalayan Game Builder: Docs already indexed (${countRequest.result} chunks)`)
         resolve()
         return
       }
@@ -225,7 +225,7 @@ export async function initializeDocsIndex(): Promise<void> {
         request.onsuccess = () => {
           completed++
           if (completed === allChunks.length) {
-            console.log(`GameBao: Indexed ${allChunks.length} document chunks`)
+            console.log(`Himalayan Game Builder: Indexed ${allChunks.length} document chunks`)
             resolve()
           }
         }

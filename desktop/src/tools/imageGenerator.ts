@@ -51,7 +51,7 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
     for (const assetSpec of input.assets) {
       const prompt = createImagePrompt(assetSpec, input.gameType, input.description)
       
-      console.log(`GameBao: Generating ${assetSpec.type} asset "${assetSpec.name}" with prompt: ${prompt}`)
+      console.log(`Himalayan Game Builder: Generating ${assetSpec.type} asset "${assetSpec.name}" with prompt: ${prompt}`)
       
       // Try DALL-E first, with fallback to Stability AI if content policy violation
       let imageUrl = await generateImageWithDALLE(apiKey, prompt, assetSpec.size)
@@ -207,7 +207,7 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
       message: `Generated ${generatedAssets.length} game asset(s)`,
     }
   } catch (error) {
-    console.error('GameBao: Image generation error:', error)
+    console.error('Himalayan Game Builder: Image generation error:', error)
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Failed to generate assets',
@@ -225,25 +225,25 @@ function createImagePrompt(
   const sanitizedDescription = sanitizePrompt(gameDescription)
   const sanitizedAssetDesc = sanitizePrompt(assetSpec.description)
   
-  // Base style with emphasis on PNG format and transparent background
-  const baseStyle = 'simple, clean, game asset, pixel art style, PNG format, transparent background, no background, alpha channel, high quality, family-friendly, cartoon style'
+  // Base style with emphasis on PNG format, transparent background, and individual assets
+  const baseStyle = 'simple, clean, individual game asset, single object, pixel art style, PNG format, transparent background, no background, alpha channel, high quality, family-friendly, cartoon style, isolated on transparent background'
   
   switch (assetSpec.type) {
     case 'tile':
-      return `${sanitizedAssetDesc}. ${baseStyle}, square tile, suitable for ${sanitizedGameType} game board. MUST be PNG with transparent background.`
+      return `${sanitizedAssetDesc}. ${baseStyle}, square tile, suitable for ${sanitizedGameType} game board. MUST be a single individual PNG asset with transparent background, no other objects in the image.`
     case 'marker':
-      return `${sanitizedAssetDesc}. ${baseStyle}, game marker, suitable for ${sanitizedGameType} game. MUST be PNG with transparent background.`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game marker, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset with transparent background, isolated object only.`
     case 'logo':
-      return `${sanitizedAssetDesc}. ${baseStyle}, game logo, suitable for ${sanitizedGameType} game. MUST be PNG with transparent background.`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game logo, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset with transparent background, isolated logo only.`
     case 'background':
-      // Backgrounds can have solid backgrounds, but still PNG format
-      return `${sanitizedAssetDesc}. simple, clean, game background, pixel art style, PNG format, high quality, family-friendly, cartoon style, suitable for ${sanitizedGameType} game. MUST be PNG format.`
+      // Backgrounds can have solid backgrounds, but still PNG format and individual
+      return `${sanitizedAssetDesc}. simple, clean, individual game background, pixel art style, PNG format, high quality, family-friendly, cartoon style, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset.`
     case 'sprite':
-      return `${sanitizedAssetDesc}. ${baseStyle}, game sprite, suitable for ${sanitizedGameType} game. MUST be PNG with transparent background, no background color, alpha channel enabled.`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game sprite, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset with transparent background, no background color, alpha channel enabled, isolated character/object only, no other elements in the image.`
     case 'icon':
-      return `${sanitizedAssetDesc}. ${baseStyle}, game icon, suitable for ${sanitizedGameType} game. MUST be PNG with transparent background.`
+      return `${sanitizedAssetDesc}. ${baseStyle}, game icon, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset with transparent background, isolated icon only.`
     default:
-      return `${sanitizedAssetDesc}. ${baseStyle}, game asset for ${sanitizedGameType}. MUST be PNG with transparent background.`
+      return `${sanitizedAssetDesc}. ${baseStyle}, individual game asset for ${sanitizedGameType}. MUST be a single individual PNG asset with transparent background, isolated object only.`
   }
 }
 
@@ -337,7 +337,7 @@ async function generateImageWithDALLE(
       },
       body: JSON.stringify({
         model: 'dall-e-3',
-        prompt: prompt + ' PNG format with transparent background.',
+        prompt: prompt + ' PNG format with transparent background. Single individual asset only, isolated object on transparent background, no other elements.',
         n: 1,
         size: dalleSizeParam,
         quality: 'standard',
@@ -413,7 +413,7 @@ async function generateImageWithStabilityAI(
         'Accept': 'application/json',
       },
       body: JSON.stringify({
-        text_prompts: [{ text: prompt + ' PNG format with transparent background, alpha channel' }],
+        text_prompts: [{ text: prompt + ' PNG format with transparent background, alpha channel, single individual asset only, isolated object on transparent background, no other elements' }],
         cfg_scale: 7,
         height,
         width,
