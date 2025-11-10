@@ -155,8 +155,27 @@ export async function orchestrate(
         }
       }
       
-      // For NEW game builds (not modifications), determine required assets first, then generate them
-      if (isGameBuildRequest && !isGameModificationRequest) {
+      // For NEW game builds OR if no assets exist, determine required assets first, then generate them
+      // Check if assets already exist
+      let existingAssetsCount = 0
+      if (gameId) {
+        try {
+          const { listFilePaths } = await import('../services/projects')
+          const existingFiles = await listFilePaths(gameId)
+          existingAssetsCount = existingFiles.filter(p => p.startsWith('assets/')).length
+          console.log(`GameBao: Found ${existingAssetsCount} existing assets for game`)
+        } catch (error) {
+          console.warn('GameBao: Could not check existing assets:', error)
+        }
+      }
+      
+      // Generate assets if:
+      // 1. It's a new game build request (not a modification), OR
+      // 2. It's a build request but no assets exist yet
+      const shouldGenerateAssets = (isGameBuildRequest && !isGameModificationRequest) || 
+                                   (isGameBuildRequest && existingAssetsCount === 0)
+      
+      if (shouldGenerateAssets) {
         try {
           // Step 1: Ask gameBuilder to analyze what assets are needed
           onStatusUpdate?.('Analyzing game requirements...')
@@ -191,6 +210,10 @@ export async function orchestrate(
               }
             } else {
               console.warn('GameBao: Asset generation failed, continuing without assets')
+              console.warn('GameBao: Asset generation result:', assetsResult)
+              if (assetsResult.error) {
+                console.error('GameBao: Asset generation error details:', assetsResult.error)
+              }
             }
           } else {
             console.log('GameBao: No assets required for this game type')
@@ -199,6 +222,8 @@ export async function orchestrate(
           console.error('GameBao: Asset generation error:', error)
           // Continue without assets if generation fails
         }
+      } else {
+        console.log(`GameBao: Skipping asset generation (isBuildRequest: ${isGameBuildRequest}, isModification: ${isGameModificationRequest}, existingAssets: ${existingAssetsCount})`)
       }
       
       // Proceed with buildGame (with or without assets)

@@ -119,12 +119,7 @@ async function generateGameCodeWithAI(
     throw new Error('OpenAI API key required for AI code generation')
   }
 
-  let model = await get<string>('model', 'gpt-4o')
-  // Auto-migrate from GPT-5 to GPT-4o if GPT-5 is selected (requires org verification)
-  if (model === 'gpt-5') {
-    console.log('GameBuilder: Auto-migrating from GPT-5 to GPT-4o (GPT-5 requires organization verification)')
-    model = 'gpt-4o'
-  }
+  let model = await get<string>('model', 'gpt-5')
   
   // Generate a scene class name based on game type (must be defined before use in template strings)
   const sceneClassName = gameType && gameType !== 'game' 
@@ -136,6 +131,15 @@ async function generateGameCodeWithAI(
     ? `\n\n**AVAILABLE ASSETS - YOU MUST USE THESE IN YOUR GAME (DO NOT IGNORE THESE):**
 ${assets.map(a => `- "${a.name}" (${a.type})`).join('\n')}
 
+**CRITICAL: THESE ARE STATIC PNG IMAGES - NOT ANIMATED SPRITESHEETS**
+- All assets are static PNG image files (single frame images)
+- DO NOT use this.load.spritesheet() or this.load.atlas() - these are NOT spritesheets
+- DO NOT create animations from these assets - they are single static images
+- Use this.load.image() to load them as static images
+- Use this.add.image() to display them - they will appear as static sprites
+- For character movement, you can move the image position, but the image itself won't animate
+- If you need animation effects, use Phaser's built-in tweens or physics, but the sprite image itself stays static
+
 **COMPLETE WORKING EXAMPLE - YOU MUST FOLLOW THIS EXACT PATTERN:**
 
 class ${sceneClassName} extends Phaser.Scene {
@@ -146,7 +150,8 @@ class ${sceneClassName} extends Phaser.Scene {
     const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
     const assets = gameAssets || {}
     
-${assets.map(a => `    // Load ${a.name} asset (blob URL from game instance)
+${assets.map(a => `    // Load ${a.name} asset as STATIC IMAGE (blob URL from game instance)
+    // IMPORTANT: This is a static PNG, NOT a spritesheet - use load.image(), NOT load.spritesheet()
     if (assets['${a.name}']) {
       this.load.image('${a.name}', assets['${a.name}'])
     }`).join('\n')}
@@ -158,19 +163,23 @@ ${assets.map(a => `    // Load ${a.name} asset (blob URL from game instance)
     
 ${assets.map((a) => {
   if (a.name.includes('logo')) {
-    return `    // Display ${a.name} at top center
+    return `    // Display ${a.name} at top center (static image)
     this.add.image(width / 2, 50, '${a.name}').setDisplaySize(100, 100).setOrigin(0.5)`
   } else if (a.name.includes('background')) {
-    return `    // Display ${a.name} as background (full screen)
+    return `    // Display ${a.name} as background (static image, full screen)
     this.add.image(width / 2, height / 2, '${a.name}').setDisplaySize(width, height)`
   } else if (a.name.includes('tile')) {
-    return `    // Use ${a.name} for game tiles/board
+    return `    // Use ${a.name} for game tiles/board (static image)
     // Example: this.add.image(x, y, '${a.name}')`
   } else if (a.name.includes('marker') || a.name.includes('x_') || a.name.includes('o_')) {
-    return `    // Use ${a.name} for game markers/pieces
+    return `    // Use ${a.name} for game markers/pieces (static image)
     // Example: this.add.image(x, y, '${a.name}')`
+  } else if (a.name.includes('character') || a.name.includes('player')) {
+    return `    // Use ${a.name} for player character (static image - can move position but image won't animate)
+    // Example: this.player = this.add.image(x, y, '${a.name}')
+    // You can move it with: this.player.x += speed, or use physics, but the sprite itself is static`
   } else {
-    return `    // Use ${a.name} asset in your game
+    return `    // Use ${a.name} asset in your game (static image)
     this.add.image(x, y, '${a.name}')`
   }
 }).join('\n')}
@@ -183,8 +192,10 @@ ${assets.map((a) => {
 1. You MUST include a preload() method that loads ALL ${assets.length} asset(s) listed above
 2. You MUST use ALL ${assets.length} asset(s) in your create() method with this.add.image()
 3. DO NOT create placeholder shapes (rectangles, circles, graphics) if assets are available
-4. The assets are blob URLs stored on the game instance - access via: this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
-5. After loading, verify with: if (this.textures.exists('${assets[0]?.name}')) { /* use asset */ }
+4. The assets are STATIC PNG IMAGES - use this.load.image(), NOT this.load.spritesheet() or animation methods
+5. DO NOT try to create animations from these static images - they are single-frame PNG files
+6. The assets are blob URLs stored on the game instance - access via: this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
+7. After loading, verify with: if (this.textures.exists('${assets[0]?.name}')) { /* use asset */ }
 `
     : ''
 
@@ -206,8 +217,12 @@ CRITICAL REQUIREMENTS:
     - DO NOT use TypeScript-specific syntax
     - The code will be executed as plain JavaScript, so use only JavaScript syntax
 12. **CRITICAL ASSET USAGE: If assets are provided in the prompt below, you MUST:**
+    - **IMPORTANT: All assets are STATIC PNG IMAGES (single-frame images), NOT animated spritesheets**
     - Load ALL assets in preload() method using: const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}; const assets = gameAssets || {}; if (assets['asset_name']) { this.load.image('asset_name', assets['asset_name']) }
+    - **DO NOT use this.load.spritesheet() or this.load.atlas() - these are static PNG files, not spritesheets**
+    - **DO NOT create animations from these assets - they are single static images**
     - Use ALL assets in create() method (display them with this.add.image(x, y, 'asset_name'))
+    - Characters can move (change position), but the sprite image itself will NOT animate
     - DO NOT create placeholder rectangles, circles, or shapes if assets are available
     - The assets object contains blob URLs that work directly with Phaser's load.image()
     - Asset keys match the names listed in the assets section below
@@ -306,8 +321,25 @@ Make it a complete, playable game with proper game mechanics, controls, and visu
     if (preloadMatch) {
       const preloadStart = preloadMatch.index! + preloadMatch[0].length
       
-      // Check if assets are already being loaded in this preload method
-      const preloadContent = code.substring(preloadStart, code.indexOf('}', preloadStart) + 1)
+      // Find the end of the preload method (matching braces)
+      let braceCount = 1
+      let preloadEnd = preloadStart
+      for (let i = preloadStart; i < code.length && braceCount > 0; i++) {
+        if (code[i] === '{') braceCount++
+        if (code[i] === '}') braceCount--
+        if (braceCount === 0) {
+          preloadEnd = i
+          break
+        }
+      }
+      
+      const preloadContent = code.substring(preloadStart, preloadEnd)
+      
+      // Check if gameAssets or assets variables are already declared
+      const hasGameAssetsDecl = /(const|let|var)\s+gameAssets\s*=/.test(preloadContent)
+      const hasAssetsDecl = /(const|let|var)\s+assets\s*=/.test(preloadContent)
+      
+      // Check if assets are already being loaded
       const assetsAlreadyLoaded = assetNames.some(name => 
         preloadContent.includes(`assets['${name}']`) || 
         preloadContent.includes(`assets["${name}"]`) ||
@@ -318,9 +350,26 @@ Make it a complete, playable game with proper game mechanics, controls, and visu
       
       if (!assetsAlreadyLoaded) {
         console.log('GameBao: Injecting asset loading code into preload method')
-        const assetLoadingCode = `\n    // Load assets from game instance (stored by runtime)
+        
+        // If gameAssets is already declared, reuse it; otherwise declare it
+        let assetLoadingCode = ''
+        if (!hasGameAssetsDecl && !hasAssetsDecl) {
+          // Neither is declared - declare both
+          assetLoadingCode = `\n    // Load assets from game instance (stored by runtime)
     const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
-    const assets = gameAssets || {}\n${assetNames.map(name => `    if (assets['${name}']) {\n      this.load.image('${name}', assets['${name}'])\n    }`).join('\n')}\n`
+    const assets = gameAssets || {}\n`
+        } else if (hasGameAssetsDecl && !hasAssetsDecl) {
+          // gameAssets exists, but assets doesn't - just declare assets
+          assetLoadingCode = `\n    // Load assets from game instance
+    const assets = gameAssets || {}\n`
+        } else if (hasAssetsDecl) {
+          // assets already exists - just use it
+          assetLoadingCode = `\n    // Load assets from game instance\n`
+        }
+        
+        // Add asset loading code
+        assetLoadingCode += assetNames.map(name => `    if (assets['${name}']) {\n      this.load.image('${name}', assets['${name}'])\n    }`).join('\n') + '\n'
+        
         code = code.slice(0, preloadStart) + assetLoadingCode + code.slice(preloadStart)
         console.log('GameBao: ✓ Injected asset loading code')
       } else {
@@ -457,10 +506,7 @@ export async function determineRequiredAssets(
       return getDefaultAssetsForGameType(gameType)
     }
 
-    let model = await get<string>('model', 'gpt-4o')
-    if (model === 'gpt-5') {
-      model = 'gpt-4o'
-    }
+    let model = await get<string>('model', 'gpt-5')
 
     const prompt = `You are analyzing a game request to determine what visual assets are needed.
 
@@ -471,6 +517,7 @@ List the specific visual assets needed for this game. For example:
 - For Pacman: pacman (player character), ghost_red, ghost_blue, ghost_pink, ghost_orange, dot, power_pellet, wall_tile
 - For Tic-Tac-Toe: x_marker, o_marker, game_tile
 - For Donkey Kong: donkey_kong, mario, barrel, platform, ladder
+- For a generic 2D game: player (character), enemy, platform (ground/tiles), background
 
 Return ONLY a JSON array of objects with this structure:
 [
@@ -480,8 +527,12 @@ Return ONLY a JSON array of objects with this structure:
 
 Valid types are: "sprite", "tile", "marker", "icon" (use "sprite" for characters and objects, "tile" for tiles/backgrounds, "marker" for UI markers, "icon" for small icons).
 
-Be specific and game-appropriate. Don't include generic assets like "game_logo" or "game_background" unless they're actually needed for the gameplay.
-Return ONLY valid JSON, no markdown, no explanations.`
+IMPORTANT: Always return at least 2-4 assets. Even for generic games, include:
+- A player/character sprite
+- At least one other game element (enemy, obstacle, collectible, etc.)
+- Optionally: platform/tile, background
+
+Be specific and game-appropriate. Return ONLY valid JSON, no markdown, no explanations.`
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -520,12 +571,17 @@ Return ONLY valid JSON, no markdown, no explanations.`
       if (Array.isArray(assets) && assets.length > 0) {
         console.log(`GameBao: AI determined ${assets.length} required assets:`, assets.map(a => a.name))
         return assets
+      } else {
+        console.warn('GameBao: AI returned empty or invalid assets array, using defaults')
       }
     } catch (parseError) {
       console.warn('Failed to parse asset requirements, using defaults:', parseError)
     }
 
-    return getDefaultAssetsForGameType(gameType)
+    // Always return default assets as fallback
+    const defaultAssets = getDefaultAssetsForGameType(gameType)
+    console.log(`GameBao: Using default assets for game type "${gameType}":`, defaultAssets.map(a => a.name))
+    return defaultAssets
   } catch (error) {
     console.error('Error determining required assets:', error)
     return getDefaultAssetsForGameType(gameType)
@@ -551,6 +607,15 @@ function getDefaultAssetsForGameType(gameType: string): Array<{ type: string; na
     ]
   }
   
+  if (lowerType.includes('platformer') || lowerType.includes('platform') || lowerType.includes('jump')) {
+    return [
+      { type: 'sprite', name: 'character', description: 'Player character sprite for jumping' },
+      { type: 'tile', name: 'platform', description: 'Platform tile for character to jump on' },
+      { type: 'tile', name: 'ground', description: 'Ground tile' },
+      { type: 'sprite', name: 'hole', description: 'Hole sprite that character must jump over' },
+    ]
+  }
+  
   if (lowerType.includes('tic') || lowerType.includes('tac') || lowerType.includes('toe')) {
     return [
       { type: 'sprite', name: 'x_marker', description: 'X marker for tic-tac-toe' },
@@ -569,10 +634,13 @@ function getDefaultAssetsForGameType(gameType: string): Array<{ type: string; na
     ]
   }
   
-  // Generic defaults
+  // Generic defaults - always return at least basic assets for any game
+  console.log(`GameBao: No specific defaults for "${gameType}", returning generic game assets`)
   return [
     { type: 'sprite', name: 'player', description: 'Player character sprite' },
     { type: 'sprite', name: 'enemy', description: 'Enemy sprite' },
+    { type: 'tile', name: 'platform', description: 'Platform or ground tile' },
+    { type: 'tile', name: 'background', description: 'Game background' },
   ]
 }
 
@@ -731,6 +799,27 @@ export async function buildGame(input: {
     }
   }
 
+  // Build message about assets
+  let assetMessage = ''
+  if (input.assets && input.assets.length > 0) {
+    // Let AI determine what would benefit from animation
+    const characterAssets = input.assets.filter(a => 
+      a.name.includes('character') || 
+      a.name.includes('player') || 
+      a.name.includes('pacman') || 
+      a.name.includes('mario') ||
+      a.name.includes('enemy') ||
+      a.name.includes('ghost')
+    )
+    
+    if (characterAssets.length > 0) {
+      const assetNames = characterAssets.map(a => a.name).join(', ')
+      assetMessage = `\n\n**Note about assets:** I've generated static PNG images for your game (${input.assets.length} asset${input.assets.length > 1 ? 's' : ''} total). While these work great for backgrounds, tiles, and static elements, animated spritesheets would make the game feel more polished - especially for characters like ${assetNames} that move around. For now, the game uses these static images, which means characters will move but their sprites won't animate (no walking/running animations). In the future, animated spritesheets would add that extra polish!`
+    } else {
+      assetMessage = `\n\n**Note about assets:** I've generated ${input.assets.length} static PNG image${input.assets.length > 1 ? 's' : ''} for your game. These are perfect for static elements like tiles and backgrounds. For characters or moving objects, animated spritesheets would add more visual polish, but the static images work well for now!`
+    }
+  }
+
   return {
     ok: true,
     data: {
@@ -739,7 +828,7 @@ export async function buildGame(input: {
       type: input.gameType,
       gameId: input.gameId,
     },
-    message: `Generated ${input.gameType} game code${input.gameId ? ' and saved files' : ''}`,
+    message: `Generated ${input.gameType} game code${input.gameId ? ' and saved files' : ''}.${assetMessage}`,
   }
 }
 

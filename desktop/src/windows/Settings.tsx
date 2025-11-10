@@ -9,7 +9,7 @@ interface SettingsProps {
 }
 
 export const Settings = ({ onBack, onSave }: SettingsProps) => {
-  const [model, setModel] = useState('gpt-4o')
+  const [model, setModel] = useState('gpt-5')
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -18,13 +18,7 @@ export const Settings = ({ onBack, onSave }: SettingsProps) => {
   }, [])
 
   const loadSettings = async () => {
-    let m = await get<string>('model', 'gpt-4o')
-    // Auto-migrate from GPT-5 to GPT-4o if GPT-5 is selected (requires org verification)
-    if (m === 'gpt-5') {
-      console.log('Settings: Auto-migrating from GPT-5 to GPT-4o (GPT-5 requires organization verification)')
-      m = 'gpt-4o'
-      await set('model', 'gpt-4o') // Save the migration
-    }
+    let m = await get<string>('model', 'gpt-5')
     setModel(m)
   }
 
@@ -75,10 +69,10 @@ export const Settings = ({ onBack, onSave }: SettingsProps) => {
                 onChange={(e) => setModel(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-[#FBF7EF] border border-[#533F31]/20 text-[#2E2A25]"
               >
+                <option value="gpt-5">GPT-5</option>
                 <option value="gpt-4o">GPT-4o</option>
                 <option value="gpt-4o-mini">GPT-4o Mini</option>
                 <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                <option value="gpt-5">GPT-5</option>
               </select>
             </div>
           </div>

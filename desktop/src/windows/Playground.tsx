@@ -256,7 +256,18 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
 
       // Display generated assets in Design Board if available
       if (result.generatedAssets && result.generatedAssets.length > 0) {
+        console.log('Playground: Received generated assets:', result.generatedAssets.length)
         setGeneratedAssets(result.generatedAssets)
+        
+        // Wait a bit for assets to be saved, then refresh preview
+        setTimeout(async () => {
+          if (gameRuntime && gameId) {
+            console.log('Playground: Auto-refreshing preview after asset generation...')
+            await handleRefreshPreview()
+          }
+        }, 2000) // Wait 2 seconds for assets to be saved
+      } else {
+        console.log('Playground: No generated assets in result')
       }
 
       let fullResponse = ''
@@ -450,8 +461,17 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
           }
         })
         
+        console.log('Playground: All file paths:', Object.keys(files))
+        console.log('Playground: Asset file paths:', Object.keys(files).filter(p => p.startsWith('assets/')))
         console.log('Playground: Collected assets for game:', Object.keys(assets))
-        console.log('Playground: Asset URLs:', assets)
+        console.log('Playground: Asset count:', Object.keys(assets).length)
+        if (Object.keys(assets).length > 0) {
+          console.log('Playground: Asset URLs (first 100 chars each):', Object.fromEntries(
+            Object.entries(assets).map(([key, url]) => [key, typeof url === 'string' ? url.substring(0, 100) + '...' : 'not a string'])
+          ))
+        } else {
+          console.warn('Playground: No assets found in files! Available files:', Object.keys(files))
+        }
         
         // Clear any previously loaded scripts from window
         delete (window as any)[sceneName.charAt(0).toUpperCase() + sceneName.slice(1) + 'Scene']
@@ -832,31 +852,33 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
             className="p-4 pt-12 border-b border-[#533F31]/20 bg-[#FBF7EF] overflow-y-auto min-h-0"
             style={{ height: `${designBoardHeight}%` }}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium text-[#2E2A25]">Design Board</h3>
-              <div className="flex gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".png,image/png"
-                  multiple
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="asset-upload-input"
-                />
-                <Button
-                  variant="outlined"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading || !gameId}
-                  title="Upload up to 10 PNG files with transparent backgrounds"
-                >
-                  {isUploading ? 'Uploading...' : 'Upload Assets'}
-                </Button>
-                <p className="text-xs text-[#2E2A25]/60">
-                  PNG files only (up to 10). Transparent backgrounds recommended for best results.
-                </p>
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-medium text-[#2E2A25]">Design Board</h3>
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".png,image/png"
+                    multiple
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    id="asset-upload-input"
+                  />
+                  <Button
+                    variant="outlined"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading || !gameId}
+                    title="Upload up to 10 PNG files with transparent backgrounds"
+                  >
+                    {isUploading ? 'Uploading...' : 'Upload Assets'}
+                  </Button>
+                </div>
               </div>
+              <p className="text-xs text-[#2E2A25]/60 text-right">
+                PNG files only (up to 10). Transparent backgrounds recommended for best results.
+              </p>
             </div>
             {generatedAssets.length > 0 && !selectedFile ? (
               <div className="space-y-4">
