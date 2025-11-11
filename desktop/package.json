@@ -40,6 +40,7 @@
     }
   },
   "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
     "@supabase/supabase-js": "^2.80.0",
     "dotenv": "^17.2.3",
     "electron-store": "^10.0.0",

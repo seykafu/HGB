@@ -1,6 +1,7 @@
 import type { ToolResult } from './schema'
 import { getSupabaseClient, getUser } from '../lib/supabase'
 import { get } from '../lib/storage'
+import { removeBackground } from '@imgly/background-removal'
 
 export interface GenerateAssetsInput {
   gameId: string
@@ -45,10 +46,16 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
       throw new Error('OpenAI API key required for image generation. Please set it in Settings.')
     }
 
+    // Limit to maximum 10 assets per prompt
+    const assetsToGenerate = input.assets.slice(0, 10)
+    if (input.assets.length > 10) {
+      console.log(`Himalayan Game Builder: Limiting asset generation from ${input.assets.length} to 10 (maximum allowed)`)
+    }
+
     const generatedAssets: GeneratedAsset[] = []
 
     // Generate each asset using DALL-E
-    for (const assetSpec of input.assets) {
+    for (const assetSpec of assetsToGenerate) {
       const prompt = createImagePrompt(assetSpec, input.gameType, input.description)
       
       console.log(`Himalayan Game Builder: Generating ${assetSpec.type} asset "${assetSpec.name}" with prompt: ${prompt}`)
@@ -93,12 +100,29 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
         }
       }
       
+      // Remove background automatically using @imgly/background-removal
+      let processedBlob = imageBlob
+      try {
+        console.log(`Removing background from ${assetSpec.name}...`)
+        const imageArrayBuffer = await imageBlob.arrayBuffer()
+        const output = await removeBackground(imageArrayBuffer, {
+          output: 'image/png'
+        })
+        // removeBackground returns a Blob when output is 'image/png'
+        processedBlob = output instanceof Blob ? output : new Blob([output], { type: 'image/png' })
+        console.log(`✓ Background removed from ${assetSpec.name}`)
+      } catch (error) {
+        console.warn(`Failed to remove background from ${assetSpec.name}, using original image:`, error)
+        // Continue with original image if background removal fails
+        processedBlob = imageBlob
+      }
+      
       // Ensure PNG format - convert to PNG if needed
-      let finalBlob = imageBlob
-      if (!imageBlob.type.includes('png')) {
+      let finalBlob = processedBlob
+      if (!processedBlob.type.includes('png')) {
         console.log(`Converting ${assetSpec.name} to PNG format...`)
         // Convert to PNG using canvas
-        finalBlob = await convertToPNG(imageBlob)
+        finalBlob = await convertToPNG(processedBlob)
       }
       
       // Always use PNG extension
@@ -134,8 +158,8 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
         assetUrl = urlData?.publicUrl || storagePath
       }
 
-      // Calculate hash and size for game_files table
-      const arrayBuffer = await imageBlob.arrayBuffer()
+      // Calculate hash and size for game_files table (use finalBlob, not original imageBlob)
+      const arrayBuffer = await finalBlob.arrayBuffer()
       const size = arrayBuffer.byteLength
       const { calculateSHA256 } = await import('../services/projects')
       const hash = await calculateSHA256(arrayBuffer)
@@ -225,25 +249,26 @@ function createImagePrompt(
   const sanitizedDescription = sanitizePrompt(gameDescription)
   const sanitizedAssetDesc = sanitizePrompt(assetSpec.description)
   
-  // Base style with emphasis on PNG format, transparent background, and individual assets
-  const baseStyle = 'simple, clean, individual game asset, single object, pixel art style, PNG format, transparent background, no background, alpha channel, high quality, family-friendly, cartoon style, isolated on transparent background'
+  // SPRITE GENERATION MODE (STRICT) - must be under 2000 chars for Stability AI, 4000 for DALL-E:
+  // Generate ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective/isometric/3D. No backgrounds/scenes/extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel).
+  const absoluteRules = 'SPRITE GENERATION MODE (STRICT): ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective. No isometric. No 3D angle. No backgrounds, no scenes, no extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel). Deliver only the sprite, nothing else.'
   
   switch (assetSpec.type) {
     case 'tile':
-      return `${sanitizedAssetDesc}. ${baseStyle}, square tile, suitable for ${sanitizedGameType} game board. MUST be a single individual PNG asset with transparent background, no other objects in the image.`
+      return `${sanitizedAssetDesc}. ${absoluteRules} Square tile for ${sanitizedGameType}.`
     case 'marker':
-      return `${sanitizedAssetDesc}. ${baseStyle}, game marker, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset with transparent background, isolated object only.`
+      return `${sanitizedAssetDesc}. ${absoluteRules} Game marker for ${sanitizedGameType}.`
     case 'logo':
-      return `${sanitizedAssetDesc}. ${baseStyle}, game logo, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset with transparent background, isolated logo only.`
+      return `${sanitizedAssetDesc}. ${absoluteRules} Game logo for ${sanitizedGameType}.`
     case 'background':
-      // Backgrounds can have solid backgrounds, but still PNG format and individual
-      return `${sanitizedAssetDesc}. simple, clean, individual game background, pixel art style, PNG format, high quality, family-friendly, cartoon style, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset.`
+      // Backgrounds can have solid backgrounds, but still PNG format, individual, and 2D flat
+      return `${sanitizedAssetDesc}. 2D flat game background for ${sanitizedGameType}. PNG format, pixel art style.`
     case 'sprite':
-      return `${sanitizedAssetDesc}. ${baseStyle}, game sprite, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset with transparent background, no background color, alpha channel enabled, isolated character/object only, no other elements in the image.`
+      return `${sanitizedAssetDesc}. ${absoluteRules} Game sprite for ${sanitizedGameType}.`
     case 'icon':
-      return `${sanitizedAssetDesc}. ${baseStyle}, game icon, suitable for ${sanitizedGameType} game. MUST be a single individual PNG asset with transparent background, isolated icon only.`
+      return `${sanitizedAssetDesc}. ${absoluteRules} Game icon for ${sanitizedGameType}.`
     default:
-      return `${sanitizedAssetDesc}. ${baseStyle}, individual game asset for ${sanitizedGameType}. MUST be a single individual PNG asset with transparent background, isolated object only.`
+      return `${sanitizedAssetDesc}. ${absoluteRules} Game asset for ${sanitizedGameType}.`
   }
 }
 
@@ -337,7 +362,7 @@ async function generateImageWithDALLE(
       },
       body: JSON.stringify({
         model: 'dall-e-3',
-        prompt: prompt + ' PNG format with transparent background. Single individual asset only, isolated object on transparent background, no other elements.',
+        prompt: prompt + ' SPRITE GENERATION MODE (STRICT): ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective. No isometric. No 3D angle. No backgrounds, no scenes, no extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel). Deliver only the sprite, nothing else.',
         n: 1,
         size: dalleSizeParam,
         quality: 'standard',
@@ -359,6 +384,12 @@ async function generateImageWithDALLE(
           errorData.error?.type === 'image_generation_user_error') {
         console.warn('DALL-E content policy violation, will try fallback')
         return null
+      }
+      
+      // Check for rate limit or quota errors
+      if (response.status === 429 || errorData.error?.code === 'insufficient_quota' || 
+          errorData.error?.type === 'insufficient_quota') {
+        throw new Error('Rate limit exceeded. Please contact kaseyfuwaterloo@gmail.com to use the premium version.')
       }
       
       throw new Error(`DALL-E API error: ${response.status}`)
@@ -413,7 +444,7 @@ async function generateImageWithStabilityAI(
         'Accept': 'application/json',
       },
       body: JSON.stringify({
-        text_prompts: [{ text: prompt + ' PNG format with transparent background, alpha channel, single individual asset only, isolated object on transparent background, no other elements' }],
+        text_prompts: [{ text: prompt + ' SPRITE GENERATION MODE (STRICT): ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective. No isometric. No 3D angle. No backgrounds, no scenes, no extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel). Deliver only the sprite, nothing else.' }],
         cfg_scale: 7,
         height,
         width,

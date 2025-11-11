@@ -19,7 +19,7 @@ export function Bubble({
           isNPC ? 'bg-[#FBF7EF]' : 'bg-[#E9C46A]/80',
         ].join(' ')}
       >
-        <p className="text-sm text-[#2E2A25] leading-relaxed">{children}</p>
+        <div className="text-sm text-[#2E2A25] leading-relaxed">{children}</div>
       </div>
     </div>
   )

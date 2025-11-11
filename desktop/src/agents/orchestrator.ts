@@ -183,7 +183,12 @@ export async function orchestrate(
           const requiredAssets = await determineRequiredAssets(gameType, description)
           
           if (requiredAssets.length > 0) {
-            console.log(`Himalayan Game Builder: Determined ${requiredAssets.length} required assets:`, requiredAssets.map(a => a.name))
+            // Limit to maximum 10 assets per prompt
+            const limitedAssets = requiredAssets.slice(0, 10)
+            if (requiredAssets.length > 10) {
+              console.log(`Himalayan Game Builder: Limiting assets from ${requiredAssets.length} to 10 (maximum allowed)`)
+            }
+            console.log(`Himalayan Game Builder: Determined ${limitedAssets.length} required assets:`, limitedAssets.map(a => a.name))
             
             // Step 2: Generate the required assets
             onStatusUpdate?.('Generating game assets with AI...')
@@ -191,7 +196,7 @@ export async function orchestrate(
               gameId,
               gameType,
               description,
-              assets: requiredAssets.map(a => ({
+              assets: limitedAssets.map(a => ({
                 type: (a.type as 'tile' | 'marker' | 'logo' | 'background' | 'sprite' | 'icon') || 'sprite',
                 name: a.name,
                 description: a.description,
@@ -220,7 +225,11 @@ export async function orchestrate(
           }
         } catch (error) {
           console.error('Himalayan Game Builder: Asset generation error:', error)
-          // Continue without assets if generation fails
+          // If it's a rate limit error, propagate it to the user
+          if (error instanceof Error && error.message.includes('Rate limit exceeded')) {
+            throw error
+          }
+          // Continue without assets if generation fails for other reasons
         }
       } else {
         console.log(`Himalayan Game Builder: Skipping asset generation (isBuildRequest: ${isGameBuildRequest}, isModification: ${isGameModificationRequest}, existingAssets: ${existingAssetsCount})`)

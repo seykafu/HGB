@@ -80,7 +80,15 @@ export async function signOut() {
 export async function onAuthStateChange(callback: (user: any) => void) {
   const supabase = await getSupabaseClient()
   const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-    callback(session?.user ?? null)
+    // Suppress errors from auth state changes when offline
+    try {
+      callback(session?.user ?? null)
+    } catch (error: any) {
+      // Silently handle offline errors
+      if (!error.message?.includes('ERR_INTERNET_DISCONNECTED')) {
+        console.error('Auth state change error:', error)
+      }
+    }
   })
   return Promise.resolve({ subscription })
 }

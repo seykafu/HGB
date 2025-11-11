@@ -39,7 +39,7 @@ interface PlaygroundProps {
 }
 
 export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) => {
-  const [input, setInput] = useState(initialPrompt || '')
+  const [input, setInput] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -47,6 +47,8 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
   const [gameRuntime, setGameRuntime] = useState<PhaserGameRuntime | null>(null)
   const [dialogueRunner, setDialogueRunner] = useState<DialogueRunner | null>(null)
   const [projectName, setProjectName] = useState('Untitled Game')
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [editingName, setEditingName] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [selectedFile, setSelectedFile] = useState<{ path: string; content: string } | null>(null)
   const [fileTreeRefresh, setFileTreeRefresh] = useState(0)
@@ -98,6 +100,40 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
         if (savedMessages && savedMessages.length > 0) {
           console.log(`Playground: Restored ${savedMessages.length} messages from storage`)
           setMessages(savedMessages)
+          
+          // Check if there's a pending request that was interrupted
+          const pendingRequestKey = `pendingRequest_${gameId}`
+          const pendingRequest = await get<{
+            prompt: string
+            timestamp: number
+            conversationHistory: ChatMessage[]
+          } | null>(pendingRequestKey, null)
+          
+          if (pendingRequest) {
+            // Check if the request is recent (within last hour) and hasn't completed
+            const timeSinceRequest = Date.now() - pendingRequest.timestamp
+            const oneHour = 60 * 60 * 1000
+            
+            if (timeSinceRequest < oneHour) {
+              // Check if the last message is the user's prompt (meaning it didn't complete)
+              const lastMessage = savedMessages[savedMessages.length - 1]
+              if (lastMessage && lastMessage.role === 'user' && lastMessage.content === pendingRequest.prompt) {
+                console.log('Playground: Found incomplete request from sleep/wake, resuming automatically...')
+                // Wait a bit for the app to fully initialize, then resume
+                // Use a longer delay to ensure everything is ready
+                setTimeout(() => {
+                  handleSend(pendingRequest.prompt)
+                }, 2000)
+              } else {
+                // Request completed, clear pending state
+                await set(pendingRequestKey, null)
+              }
+            } else {
+              // Request is too old, clear it
+              console.log('Playground: Pending request is too old, clearing...')
+              await set(pendingRequestKey, null)
+            }
+          }
           // Mark initial prompt as sent if we have messages
           initialPromptSentRef.current = true
         }
@@ -178,10 +214,42 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
     if (!gameId) return
     try {
       const game = await getGame(gameId)
-      setProjectName(game.title)
+      setProjectName(game.title || 'Untitled Game')
     } catch (error) {
       console.error('Failed to load game info:', error)
     }
+  }
+
+  const handleNameEditStart = () => {
+    setEditingName(projectName)
+    setIsEditingName(true)
+  }
+
+  const handleNameEditSave = async () => {
+    if (!gameId) return
+    
+    const trimmedName = editingName.trim()
+    if (trimmedName === projectName || trimmedName === '') {
+      // No change or empty, just cancel
+      setIsEditingName(false)
+      return
+    }
+
+    try {
+      const { updateGame } = await import('../services/projects')
+      await updateGame(gameId, { title: trimmedName })
+      setProjectName(trimmedName)
+      setIsEditingName(false)
+    } catch (error) {
+      console.error('Failed to update game name:', error)
+      alert('Failed to update game name. Please try again.')
+      setIsEditingName(false)
+    }
+  }
+
+  const handleNameEditCancel = () => {
+    setIsEditingName(false)
+    setEditingName('')
   }
 
   const handleSend = async (messageText?: string) => {
@@ -228,6 +296,17 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
     setInput('')
     setIsLoading(true)
     setStatusMessage(null)
+
+    // Save pending request state so it can be resumed if interrupted
+    if (gameId) {
+      const pendingRequestKey = `pendingRequest_${gameId}`
+      const fullConversationHistory = [...messages, userMessage]
+      await set(pendingRequestKey, {
+        prompt: messageToSend,
+        timestamp: Date.now(),
+        conversationHistory: fullConversationHistory,
+      }).catch(err => console.error('Failed to save pending request:', err))
+    }
 
     // Include the current user message in the conversation history for context
     const fullConversationHistory = [...messages, userMessage]
@@ -288,6 +367,12 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
 
       setStatusMessage(null)
       setHasUnsavedChanges(true)
+      
+      // Clear pending request state since request completed successfully
+      if (gameId) {
+        const pendingRequestKey = `pendingRequest_${gameId}`
+        await set(pendingRequestKey, null).catch(err => console.error('Failed to clear pending request:', err))
+      }
       
       // Refresh file tree if game was built (check for keywords or tool results)
       if (fullResponse.toLowerCase().includes('generated') || 
@@ -393,6 +478,16 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
     } catch (error) {
       console.error('Chat error:', error)
       setStatusMessage(null)
+      
+      // Don't clear pending request on error - keep it so user can retry
+      // Only clear if it's a rate limit error (user needs to contact support)
+      if (error instanceof Error && error.message.includes('Rate limit exceeded')) {
+        if (gameId) {
+          const pendingRequestKey = `pendingRequest_${gameId}`
+          await set(pendingRequestKey, null).catch(err => console.error('Failed to clear pending request:', err))
+        }
+      }
+      
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`
@@ -660,13 +755,40 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
           <Button variant="ghost" onClick={onBack} size="sm">
             ← Back
           </Button>
-          <h2 className="font-display text-lg text-[#2E2A25]">{projectName}</h2>
+          {isEditingName ? (
+            <input
+              type="text"
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onBlur={handleNameEditSave}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  handleNameEditSave()
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  handleNameEditCancel()
+                }
+              }}
+              autoFocus
+              className="font-display text-lg text-[#2E2A25] bg-transparent border-b-2 border-[#533F31] outline-none px-1 min-w-[200px]"
+              style={{ fontFamily: 'inherit' }}
+            />
+          ) : (
+            <h2 
+              className="font-display text-lg text-[#2E2A25] cursor-pointer hover:text-[#533F31] hover:bg-[#E9C46A]/20 hover:px-2 hover:py-1 hover:rounded transition-all duration-150"
+              onClick={handleNameEditStart}
+              title="Click to edit game name"
+            >
+              {projectName}
+            </h2>
+          )}
           {hasUnsavedChanges && (
             <span className="text-xs text-[#533F31]/60">• Unsaved changes</span>
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outlined" onClick={handleSave} size="sm" disabled={!hasUnsavedChanges}>
+          <Button variant="outlined" onClick={handleSave} size="sm">
             Save
           </Button>
           <Button variant="outlined" onClick={handleExport} size="sm">
@@ -756,6 +878,9 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
               <div className="space-y-3">
                 <Bubble from="npc">
                   <p>Welcome! Try one of these prompts to get started:</p>
+                  <p className="mt-2 text-sm text-[#2E2A25]/80">
+                    <strong>Tip:</strong> Be specific with your prompts! Each prompt can generate up to 10 game assets at once. For best results, describe exactly what you want (e.g., "Build me a pacman game with a yellow player, red ghost, blue ghost, pink ghost, orange ghost, dots, power pellets, and wall tiles").
+                  </p>
                 </Bubble>
                 <div className="space-y-2">
                   <button
@@ -808,35 +933,52 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
           </div>
 
           <div className="p-4 border-t border-[#533F31]/20">
-            <div className="flex gap-2">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!isLoading && input.trim()) {
+                  handleSend()
+                }
+              }}
+              className="flex gap-2"
+            >
               <Textarea
                 ref={textareaRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  // Only prevent default for Enter without Shift
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    handleSend()
-                  }
-                  // Don't prevent default for other keys - allow normal typing
-                }}
-                onKeyPress={(e) => {
-                  // Allow all key presses to go through
+                onChange={(e) => {
+                  // Update input state - this handles ALL characters including letters and space
+                  const newValue = e.target.value
+                  setInput(newValue)
                 }}
                 onInput={(e) => {
-                  // Ensure input events work
+                  // Fallback handler to ensure all input is captured
+                  const target = e.target as HTMLTextAreaElement
+                  if (target.value !== input) {
+                    setInput(target.value)
+                  }
                 }}
-                placeholder="Add an NPC, create a scene, branch dialogue..."
+                onKeyDown={(e) => {
+                  // Only handle Enter without Shift - prevent default to stop form submission
+                  // All other keys (including all letters, space, numbers, etc.) work normally
+                  if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
+                    e.preventDefault()
+                    if (input.trim()) {
+                      handleSend()
+                    }
+                  }
+                  // For all other keys, do nothing - let onChange/onInput handle them
+                }}
+                placeholder={initialPrompt || "Add an NPC, create a scene, branch dialogue..."}
                 className="flex-1 min-h-[60px] max-h-[120px]"
                 rows={2}
                 autoComplete="off"
                 spellCheck={false}
+                disabled={isLoading}
               />
-              <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading}>
+              <Button type="submit" disabled={!input.trim() || isLoading}>
                 Send
               </Button>
-            </div>
+            </form>
           </div>
         </div>
         {/* Chat Resize Handle */}

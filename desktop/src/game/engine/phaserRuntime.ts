@@ -42,6 +42,7 @@ export class PhaserGameRuntime {
   private scenes: Map<string, GameScene> = new Map()
   private currentSceneName: string | null = null
   private loadedScripts: Set<string> = new Set()
+  private assetBlobUrls: Set<string> = new Set() // Track blob URLs for cleanup
 
   constructor(private container: HTMLElement) {}
 
@@ -91,6 +92,69 @@ export class PhaserGameRuntime {
         }
       }
       
+      // Fix duplicate variable declarations (width/height) in create method
+      // This handles cases where old code has duplicate declarations
+      const createMethodRegex = /(create\s*\([^)]*\)\s*\{)/
+      const createMatch = cleanedCode.match(createMethodRegex)
+      if (createMatch) {
+        const createStart = createMatch.index! + createMatch[0].length
+        
+        // Find the end of the create method (matching braces)
+        let createBraceCount = 1
+        let createEnd = createStart
+        for (let i = createStart; i < cleanedCode.length && createBraceCount > 0; i++) {
+          if (cleanedCode[i] === '{') createBraceCount++
+          if (cleanedCode[i] === '}') createBraceCount--
+          if (createBraceCount === 0) {
+            createEnd = i
+            break
+          }
+        }
+        
+        const beforeCreate = cleanedCode.substring(0, createStart)
+        let createContent = cleanedCode.substring(createStart, createEnd)
+        const afterCreate = cleanedCode.substring(createEnd)
+        
+        // Count declarations
+        const widthDeclCount = (createContent.match(/(const|let|var)\s+width\s*=/g) || []).length
+        const heightDeclCount = (createContent.match(/(const|let|var)\s+height\s*=/g) || []).length
+        
+        // Remove duplicate declarations (keep only the first one)
+        if (widthDeclCount > 1 || heightDeclCount > 1) {
+          console.log(`PhaserRuntime: Found duplicate declarations - width: ${widthDeclCount}, height: ${heightDeclCount}, removing duplicates...`)
+          
+          // Remove duplicate width declarations (keep first, remove rest)
+          // Match: (const|let|var) width = ... until semicolon, newline, or end of statement
+          let widthRemoved = false
+          let firstWidthFound = false
+          createContent = createContent.replace(/(const|let|var)\s+width\s*=[^;\n]*(?:[;\n]|$)/g, (match) => {
+            if (!firstWidthFound) {
+              firstWidthFound = true
+              return match // Keep first declaration
+            }
+            widthRemoved = true
+            return '' // Remove duplicate declaration
+          })
+          
+          // Remove duplicate height declarations (keep first, remove rest)
+          let heightRemoved = false
+          let firstHeightFound = false
+          createContent = createContent.replace(/(const|let|var)\s+height\s*=[^;\n]*(?:[;\n]|$)/g, (match) => {
+            if (!firstHeightFound) {
+              firstHeightFound = true
+              return match // Keep first declaration
+            }
+            heightRemoved = true
+            return '' // Remove duplicate declaration
+          })
+          
+          if (widthRemoved || heightRemoved) {
+            cleanedCode = beforeCreate + createContent + afterCreate
+            console.log('PhaserRuntime: Removed duplicate width/height declarations')
+          }
+        }
+      }
+      
       // Create a function that executes the script in a safe context
       const executeScript = new Function(cleanedCode)
       executeScript()
@@ -122,6 +186,16 @@ export class PhaserGameRuntime {
     
     // Destroy existing game and clear container
     if (this.game) {
+      // Clean up blob URLs from previous game to prevent memory leaks
+      this.assetBlobUrls.forEach(url => {
+        try {
+          URL.revokeObjectURL(url)
+        } catch (e) {
+          // Ignore errors when revoking URLs
+        }
+      })
+      this.assetBlobUrls.clear()
+      
       this.game.destroy(true)
       this.game = null
     }
@@ -212,16 +286,33 @@ export class PhaserGameRuntime {
       // Store assets on the game instance so scenes can access them
       // Phaser doesn't preserve arbitrary config properties, so we store them directly on the game
       if (assets && Object.keys(assets).length > 0) {
-        // Store assets on the game instance
-        ;(this.game as any).assets = assets
-        // Also try to store in config (may not work, but worth trying)
-        ;(this.game.config as any).assets = assets
+        // Track blob URLs for cleanup
+        Object.values(assets).forEach(url => {
+          if (typeof url === 'string' && url.startsWith('blob:')) {
+            this.assetBlobUrls.add(url)
+          }
+        })
         
-        console.log('PhaserRuntime: Stored assets on game instance:', Object.keys(assets))
+        // Validate that assets are valid blob URLs or data URLs
+        const validAssets: Record<string, string> = {}
+        for (const [key, url] of Object.entries(assets)) {
+          if (typeof url === 'string' && (url.startsWith('blob:') || url.startsWith('data:'))) {
+            validAssets[key] = url
+          } else {
+            console.warn(`PhaserRuntime: Invalid asset URL for ${key}:`, url)
+          }
+        }
+        
+        // Store assets on the game instance
+        ;(this.game as any).assets = validAssets
+        // Also try to store in config (may not work, but worth trying)
+        ;(this.game.config as any).assets = validAssets
+        
+        console.log('PhaserRuntime: Stored assets on game instance:', Object.keys(validAssets))
         console.log('PhaserRuntime: Assets accessible via: this.sys.game.assets or this.sys.game.config.assets')
         
         // Also store in a global for easy access during debugging
-        ;(window as any).__phaserAssets = assets
+        ;(window as any).__phaserAssets = validAssets
       }
       
       // Verify canvas is in the correct container after a brief delay
@@ -289,6 +380,16 @@ export class PhaserGameRuntime {
 
   destroy(): void {
     if (this.game) {
+      // Clean up all blob URLs to prevent memory leaks
+      this.assetBlobUrls.forEach(url => {
+        try {
+          URL.revokeObjectURL(url)
+        } catch (e) {
+          // Ignore errors when revoking URLs
+        }
+      })
+      this.assetBlobUrls.clear()
+      
       this.game.destroy(true)
       this.game = null
     }

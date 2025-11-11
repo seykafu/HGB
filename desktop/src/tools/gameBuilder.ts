@@ -161,30 +161,39 @@ ${assets.map(a => `    // Load ${a.name} asset as STATIC IMAGE (blob URL from ga
     const width = this.cameras.main.width
     const height = this.cameras.main.height
     
+    // CRITICAL: Add assets ONCE in create() and store references - DO NOT recreate them in update()
+    // Assets should remain persistent throughout the game - no flashing or flickering
+    
 ${assets.map((a) => {
   if (a.name.includes('logo')) {
-    return `    // Display ${a.name} at top center (static image)
-    this.add.image(width / 2, 50, '${a.name}').setDisplaySize(100, 100).setOrigin(0.5)`
+    return `    // Display ${a.name} at top center (static image) - ADD ONCE, store reference if needed
+    this.logo = this.add.image(width / 2, 50, '${a.name}').setDisplaySize(100, 100).setOrigin(0.5)`
   } else if (a.name.includes('background')) {
-    return `    // Display ${a.name} as background (static image, full screen)
-    this.add.image(width / 2, height / 2, '${a.name}').setDisplaySize(width, height)`
+    return `    // Display ${a.name} as background (static image, full screen) - ADD ONCE, keep persistent
+    this.background = this.add.image(width / 2, height / 2, '${a.name}').setDisplaySize(width, height).setOrigin(0.5)`
   } else if (a.name.includes('tile')) {
-    return `    // Use ${a.name} for game tiles/board (static image)
-    // Example: this.add.image(x, y, '${a.name}')`
+    return `    // Use ${a.name} for game tiles/board (static image) - ADD ONCE per tile, store in array
+    // Example: this.tiles = []; for (let i = 0; i < count; i++) { this.tiles.push(this.add.image(x, y, '${a.name}')) }`
   } else if (a.name.includes('marker') || a.name.includes('x_') || a.name.includes('o_')) {
-    return `    // Use ${a.name} for game markers/pieces (static image)
-    // Example: this.add.image(x, y, '${a.name}')`
+    return `    // Use ${a.name} for game markers/pieces (static image) - ADD ONCE when needed, store reference
+    // Example: this.marker = this.add.image(x, y, '${a.name}'); // Store reference, don't recreate`
   } else if (a.name.includes('character') || a.name.includes('player')) {
-    return `    // Use ${a.name} for player character (static image - can move position but image won't animate)
-    // Example: this.player = this.add.image(x, y, '${a.name}')
-    // You can move it with: this.player.x += speed, or use physics, but the sprite itself is static`
+    return `    // Use ${a.name} for player character (static image) - ADD ONCE, store as this.player
+    // CRITICAL: Add once in create(), then only change position in update() - never recreate
+    this.player = this.add.image(x, y, '${a.name}').setOrigin(0.5)
+    // Move with: this.player.x += speed (in update()), but NEVER recreate this.player`
   } else {
-    return `    // Use ${a.name} asset in your game (static image)
-    this.add.image(x, y, '${a.name}')`
+    return `    // Use ${a.name} asset in your game (static image) - ADD ONCE, store reference
+    this.${a.name.replace(/[^a-zA-Z0-9]/g, '_')} = this.add.image(x, y, '${a.name}')`
   }
 }).join('\n')}
     
     // ... rest of your game code
+  }
+  
+  update() {
+    // CRITICAL: In update(), only change positions of existing assets - DO NOT add/remove/recreate assets
+    // Example: if (this.player) { this.player.x += speed } - but NEVER do: this.player = this.add.image(...)
   }
 }
 
@@ -196,6 +205,13 @@ ${assets.map((a) => {
 5. DO NOT try to create animations from these static images - they are single-frame PNG files
 6. The assets are blob URLs stored on the game instance - access via: this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}
 7. After loading, verify with: if (this.textures.exists('${assets[0]?.name}')) { /* use asset */ }
+8. **CRITICAL: PREVENT ASSET FLASHING - DO NOT:**
+    - DO NOT add/remove assets in the update() method - assets should only be added ONCE in create()
+    - DO NOT recreate assets each frame - store references (e.g., this.player, this.background) and reuse them
+    - DO NOT call this.add.image() repeatedly for the same asset - add it once in create() and store the reference
+    - DO NOT destroy and recreate assets - keep them persistent throughout the game
+    - If an asset needs to move, store it as a property (e.g., this.player = this.add.image(...)) and only change its position, never recreate it
+    - Assets should be added ONCE in create() and remain visible - do not toggle visibility rapidly or remove/add them
 `
     : ''
 
@@ -222,6 +238,14 @@ CRITICAL REQUIREMENTS:
     - **DO NOT use this.load.spritesheet() or this.load.atlas() - these are static PNG files, not spritesheets**
     - **DO NOT create animations from these assets - they are single static images**
     - Use ALL assets in create() method (display them with this.add.image(x, y, 'asset_name'))
+    - **CRITICAL: PREVENT ASSET FLASHING - Assets must be added ONCE in create() and remain persistent:**
+      - Store asset references as class properties (e.g., this.player = this.add.image(...), this.background = this.add.image(...))
+      - DO NOT add/remove assets in update() method - only add them ONCE in create()
+      - DO NOT recreate assets each frame - reuse stored references
+      - DO NOT call this.add.image() repeatedly for the same asset
+      - DO NOT destroy and recreate assets - keep them persistent
+      - If assets need to move, only change their position (this.player.x, this.player.y), never recreate them
+      - Assets should remain visible and stable - no rapid toggling of visibility or removal/addition
     - Characters can move (change position), but the sprite image itself will NOT animate
     - DO NOT create placeholder rectangles, circles, or shapes if assets are available
     - The assets object contains blob URLs that work directly with Phaser's load.image()
@@ -274,8 +298,19 @@ Make it a complete, playable game with proper game mechanics, controls, and visu
     try {
       const errorData = JSON.parse(errorText)
       errorMessage = errorData.error?.message || errorMessage
+      
+      // Check for rate limit or quota errors
+      if (response.status === 429 || errorData.error?.code === 'insufficient_quota' || 
+          errorData.error?.type === 'insufficient_quota' ||
+          errorMessage.toLowerCase().includes('quota') ||
+          errorMessage.toLowerCase().includes('rate limit')) {
+        errorMessage = 'Rate limit exceeded. Please contact kaseyfuwaterloo@gmail.com to use the premium version.'
+      }
     } catch {
       // Use default error message
+      if (response.status === 429) {
+        errorMessage = 'Rate limit exceeded. Please contact kaseyfuwaterloo@gmail.com to use the premium version.'
+      }
     }
     throw new Error(errorMessage)
   }
@@ -398,9 +433,19 @@ Make it a complete, playable game with proper game mechanics, controls, and visu
     if (createMatch) {
       const createStart = createMatch.index! + createMatch[0].length
       
-      // Check if assets are already being used in this create method
-      const createEnd = code.indexOf('}', createStart)
+      // Find the end of the create method (matching braces)
+      let createBraceCount = 1
+      let createEnd = createStart
+      for (let i = createStart; i < code.length && createBraceCount > 0; i++) {
+        if (code[i] === '{') createBraceCount++
+        if (code[i] === '}') createBraceCount--
+        if (createBraceCount === 0) {
+          createEnd = i
+          break
+        }
+      }
       const createContent = code.substring(createStart, createEnd > 0 ? createEnd : code.length)
+      
       const assetsAlreadyUsed = assetNames.some(name => 
         createContent.includes(`this.add.image`) && (
           createContent.includes(`'${name}'`) || 
@@ -410,11 +455,18 @@ Make it a complete, playable game with proper game mechanics, controls, and visu
       
       if (!assetsAlreadyUsed) {
         console.log('Himalayan Game Builder: Injecting asset usage code into create method')
-        const assetUsageCode = `\n    // Display generated assets\n    const width = this.cameras.main.width\n    const height = this.cameras.main.height\n${assetNames.map((name) => {
+        
+        // Always use direct access to avoid any potential variable declaration conflicts
+        // This is safer than trying to detect all possible declaration patterns
+        const widthRef = 'this.cameras.main.width'
+        const heightRef = 'this.cameras.main.height'
+        const varDeclarations = '' // No variable declarations needed
+        
+        const assetUsageCode = `\n    // Display generated assets\n${varDeclarations}${assetNames.map((name) => {
           if (name.includes('logo')) {
-            return `    if (this.textures.exists('${name}')) {\n      this.add.image(width / 2, 50, '${name}').setDisplaySize(100, 100).setOrigin(0.5)\n    }`
+            return `    if (this.textures.exists('${name}')) {\n      this.add.image(${widthRef} / 2, 50, '${name}').setDisplaySize(100, 100).setOrigin(0.5)\n    }`
           } else if (name.includes('background')) {
-            return `    if (this.textures.exists('${name}')) {\n      this.add.image(width / 2, height / 2, '${name}').setDisplaySize(width, height).setOrigin(0.5)\n    }`
+            return `    if (this.textures.exists('${name}')) {\n      this.add.image(${widthRef} / 2, ${heightRef} / 2, '${name}').setDisplaySize(${widthRef}, ${heightRef}).setOrigin(0.5)\n    }`
           } else if (name.includes('tile')) {
             return `    // Use ${name} for game tiles/board\n    // Example: if (this.textures.exists('${name}')) { this.add.image(x, y, '${name}') }`
           } else if (name.includes('marker') || name.includes('x_') || name.includes('o_')) {
@@ -552,6 +604,18 @@ Be specific and game-appropriate. Return ONLY valid JSON, no markdown, no explan
     })
 
     if (!response.ok) {
+      const errorText = await response.text()
+      let errorData: any = {}
+      try {
+        errorData = JSON.parse(errorText)
+      } catch {}
+      
+      // Check for rate limit or quota errors - throw error instead of silently falling back
+      if (response.status === 429 || errorData.error?.code === 'insufficient_quota' || 
+          errorData.error?.type === 'insufficient_quota') {
+        throw new Error('Rate limit exceeded. Please contact kaseyfuwaterloo@gmail.com to use the premium version.')
+      }
+      
       console.warn('Asset analysis failed, using defaults')
       return getDefaultAssetsForGameType(gameType)
     }
