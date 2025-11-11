@@ -104,11 +104,22 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
       let processedBlob = imageBlob
       try {
         console.log(`Removing background from ${assetSpec.name}...`)
-        const imageArrayBuffer = await imageBlob.arrayBuffer()
-        const output = await removeBackground(imageArrayBuffer, {
-          output: 'image/png'
+        // Ensure the blob has a proper image MIME type
+        let inputBlob = imageBlob
+        if (!imageBlob.type.startsWith('image/')) {
+          // Convert to PNG using canvas first to ensure proper format
+          inputBlob = await convertToPNG(imageBlob)
+        }
+        
+        // Create a File object from the Blob (some libraries prefer File over Blob)
+        const imageFile = new File([inputBlob], `${assetSpec.name}.png`, { 
+          type: inputBlob.type || 'image/png' 
         })
-        // removeBackground returns a Blob when output is 'image/png'
+        
+        const output = await removeBackground(imageFile, {
+          output: { format: 'image/png' }
+        })
+        // removeBackground returns a Blob when output format is 'image/png'
         processedBlob = output instanceof Blob ? output : new Blob([output], { type: 'image/png' })
         console.log(`✓ Background removed from ${assetSpec.name}`)
       } catch (error) {
@@ -234,7 +245,7 @@ export async function generateGameAssets(input: GenerateAssetsInput): Promise<To
     console.error('Himalayan Game Builder: Image generation error:', error)
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'Failed to generate assets',
+      message: error instanceof Error ? error.message : 'Failed to generate assets',
     }
   }
 }
@@ -251,7 +262,7 @@ function createImagePrompt(
   
   // SPRITE GENERATION MODE (STRICT) - must be under 2000 chars for Stability AI, 4000 for DALL-E:
   // Generate ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective/isometric/3D. No backgrounds/scenes/extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel).
-  const absoluteRules = 'SPRITE GENERATION MODE (STRICT): ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective. No isometric. No 3D angle. No backgrounds, no scenes, no extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel). Deliver only the sprite, nothing else.'
+  const absoluteRules = 'SPRITE GENERATION MODE (STRICT): ONE isolated 2D pixel-art platformer sprite to be used literally in the game. TOP-DOWN orthographic view. Flat 2D. No perspective. No 3D. No perspective. No isometric angle. Focus on just the png that will be used in the game. Centered subject with ample padding. Transparent background surrounding the main sprite, no editor windows, no checkerboards, no text, no toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel). Only the top surface visible.'
   
   switch (assetSpec.type) {
     case 'tile':
