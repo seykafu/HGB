@@ -261,25 +261,25 @@ function createImagePrompt(
   const sanitizedAssetDesc = sanitizePrompt(assetSpec.description)
   
   // SPRITE GENERATION MODE (STRICT) - must be under 2000 chars for Stability AI, 4000 for DALL-E:
-  // Generate ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective/isometric/3D. No backgrounds/scenes/extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel).
-  const absoluteRules = 'SPRITE GENERATION MODE (STRICT): ONE isolated 2D pixel-art platformer sprite to be used literally in the game. TOP-DOWN orthographic view. Flat 2D. No perspective. No 3D. No perspective. No isometric angle. Focus on just the png that will be used in the game. Centered subject with ample padding. Transparent background surrounding the main sprite, no editor windows, no checkerboards, no text, no toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel). Only the top surface visible.'
+  // Emphasize classic pixel art style like the successful sprite: flat 2D, visible square pixels, minimal shading, clean silhouette
+  const absoluteRules = 'Classic pixel art style with visible square pixels, flat 2D game sprite, orthographic side-view or top-down view, no perspective, no 3D, no depth, minimal shading only for edge definition, no gradients, no complex lighting, muted color palette, clean readable silhouette, centered with ample padding, transparent background, single isolated object only'
   
   switch (assetSpec.type) {
     case 'tile':
-      return `${sanitizedAssetDesc}. ${absoluteRules} Square tile for ${sanitizedGameType}.`
+      return `${sanitizedAssetDesc}, ${absoluteRules}, square tile for ${sanitizedGameType} game`
     case 'marker':
-      return `${sanitizedAssetDesc}. ${absoluteRules} Game marker for ${sanitizedGameType}.`
+      return `${sanitizedAssetDesc}, ${absoluteRules}, game marker for ${sanitizedGameType} game`
     case 'logo':
-      return `${sanitizedAssetDesc}. ${absoluteRules} Game logo for ${sanitizedGameType}.`
+      return `${sanitizedAssetDesc}, ${absoluteRules}, game logo for ${sanitizedGameType} game`
     case 'background':
       // Backgrounds can have solid backgrounds, but still PNG format, individual, and 2D flat
-      return `${sanitizedAssetDesc}. 2D flat game background for ${sanitizedGameType}. PNG format, pixel art style.`
+      return `${sanitizedAssetDesc}, flat 2D game background, orthographic view, no perspective, no 3D, pixel art style, for ${sanitizedGameType} game`
     case 'sprite':
-      return `${sanitizedAssetDesc}. ${absoluteRules} Game sprite for ${sanitizedGameType}.`
+      return `${sanitizedAssetDesc}, ${absoluteRules}, game sprite for ${sanitizedGameType} game`
     case 'icon':
-      return `${sanitizedAssetDesc}. ${absoluteRules} Game icon for ${sanitizedGameType}.`
+      return `${sanitizedAssetDesc}, ${absoluteRules}, game icon for ${sanitizedGameType} game`
     default:
-      return `${sanitizedAssetDesc}. ${absoluteRules} Game asset for ${sanitizedGameType}.`
+      return `${sanitizedAssetDesc}, ${absoluteRules}, game asset for ${sanitizedGameType} game`
   }
 }
 
@@ -373,7 +373,7 @@ async function generateImageWithDALLE(
       },
       body: JSON.stringify({
         model: 'dall-e-3',
-        prompt: prompt + ' SPRITE GENERATION MODE (STRICT): ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective. No isometric. No 3D angle. No backgrounds, no scenes, no extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel). Deliver only the sprite, nothing else.',
+        prompt: prompt + ', classic pixel art style with visible square pixels, flat 2D game sprite, orthographic side-view or top-down view, no perspective, no 3D, no depth, minimal shading only for edge definition, no gradients, no complex lighting, muted color palette, clean readable silhouette, centered with ample padding, transparent background, single isolated object only',
         n: 1,
         size: dalleSizeParam,
         quality: 'standard',
@@ -455,7 +455,16 @@ async function generateImageWithStabilityAI(
         'Accept': 'application/json',
       },
       body: JSON.stringify({
-        text_prompts: [{ text: prompt + ' SPRITE GENERATION MODE (STRICT): ONE isolated 2D pixel-art platformer sprite. Classic 2D, SIDE-VIEW or TOP-DOWN. No perspective. No isometric. No 3D angle. No backgrounds, no scenes, no extra objects. Centered subject with ample padding. DO NOT include UI, editor windows, checkerboards, text, toolbars, or fake transparency. Pixel-art, clean, readable silhouette. Transparent PNG (real alpha channel). Deliver only the sprite, nothing else.' }],
+        text_prompts: [
+          { 
+            text: prompt + ', classic pixel art style with visible square pixels, flat 2D game sprite, orthographic side-view or top-down view, no perspective, no 3D, no depth, minimal shading only for edge definition, no gradients, no complex lighting, muted color palette, clean readable silhouette, centered with ample padding, transparent background, single isolated object',
+            weight: 1.0
+          },
+          {
+            text: '3D, perspective, depth, shadows, gradients, complex lighting, volume, dimension, isometric, angled view, smooth rendering, anti-aliasing, photorealistic, realistic shading, text, words, letters, UI, software, editor, toolbar, panel, menu, button, grid, checkerboard, multiple objects, background, scene, environment, illustration software, Adobe, Photoshop, Illustrator',
+            weight: -2.0
+          }
+        ],
         cfg_scale: 7,
         height,
         width,

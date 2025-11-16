@@ -55,6 +55,8 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
   const [gameStructure, setGameStructure] = useState<{ type?: string; description?: string; scenes?: string[] } | null>(null)
   const [generatedAssets, setGeneratedAssets] = useState<Array<{ type: string; name: string; url: string; path: string }>>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [keptAssets, setKeptAssets] = useState<Set<string>>(new Set()) // Track which assets are marked as "keep"
+  const [existingAssets, setExistingAssets] = useState<Array<{ path: string; url: string; name: string }>>([]) // Assets loaded from file tree
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLDivElement>(null)
@@ -92,6 +94,46 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
     const initializeGame = async () => {
       // Load game info
       await loadGameInfo()
+      
+      // Load kept assets state from storage
+      if (gameId) {
+        try {
+          const storageKey = `keptAssets_${gameId}`
+          const savedKeptAssets = await get<string[]>(storageKey, [])
+          if (savedKeptAssets && savedKeptAssets.length > 0) {
+            setKeptAssets(new Set(savedKeptAssets))
+          }
+        } catch (error) {
+          console.error('Failed to load kept assets state:', error)
+        }
+      }
+      
+      // Load existing assets from file tree
+      if (gameId) {
+        try {
+          const files = await loadFiles(gameId)
+          const assetFiles = Object.keys(files)
+            .filter(path => path.startsWith('assets/') && (path.endsWith('.png') || path.endsWith('.jpg') || path.endsWith('.jpeg')))
+            .map(path => ({
+              path,
+              url: files[path],
+              name: path.replace('assets/', '').replace(/\.(png|jpg|jpeg)$/i, '')
+            }))
+          setExistingAssets(assetFiles)
+        } catch (error: any) {
+          // Suppress offline errors - they're expected when internet is disconnected
+          const errorMessage = error?.message || error?.toString() || ''
+          const isOfflineError = errorMessage.includes('ERR_INTERNET_DISCONNECTED') ||
+                                errorMessage.includes('Failed to fetch') ||
+                                errorMessage.includes('AuthRetryableFetchError') ||
+                                error?.name === 'AuthRetryableFetchError'
+          
+          if (!isOfflineError) {
+            console.error('Failed to load existing assets:', error)
+          }
+          // Silently continue if offline - assets will load when connection is restored
+        }
+      }
       
       // Load chat history from storage
       try {
@@ -256,12 +298,14 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
     const messageToSend = messageText || input.trim()
     if (!messageToSend || isLoading || !gameId) return
 
-    // Check if this is a new game build request and if there are existing assets
+    // Check if this is a new game build request (not a modification request)
+    const isModificationRequest = /(fix|update|change|modify|improve|add|remove|edit|adjust|tweak|enhance|refactor|debug|make|set)/i.test(messageToSend)
     const isGameBuildRequest = /build|create|make|generate|design/i.test(messageToSend) && 
                                /game/i.test(messageToSend) &&
-                               !/(modify|update|change|edit|add to|update)/i.test(messageToSend)
+                               !isModificationRequest
     
-    if (isGameBuildRequest) {
+    // Only show warning for NEW game builds, not modifications
+    if (isGameBuildRequest && !isModificationRequest) {
       try {
         const { listFilePaths } = await import('../services/projects')
         const existingFiles = await listFilePaths(gameId)
@@ -279,10 +323,11 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
             return
           }
           
-          // User confirmed - delete existing assets
+          // User confirmed - delete existing assets (but keep assets marked as "keep")
           const { deleteAssets } = await import('../services/projects')
-          await deleteAssets(gameId)
-          console.log('Playground: Deleted existing assets, proceeding with generation')
+          // Only delete assets that are NOT marked as "keep"
+          await deleteAssets(gameId, keptAssets)
+          console.log('Playground: Deleted existing assets (kept', keptAssets.size, 'assets), proceeding with generation')
           // Refresh file tree to show assets are deleted
           setFileTreeRefresh(prev => prev + 1)
         }
@@ -409,6 +454,16 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
                 description: gameData.description,
                 scenes,
               })
+              
+              // Load existing assets from file tree for Design Board
+              const assetFiles = Object.keys(files)
+                .filter(path => path.startsWith('assets/') && (path.endsWith('.png') || path.endsWith('.jpg') || path.endsWith('.jpeg')))
+                .map(path => ({
+                  path,
+                  url: files[path],
+                  name: path.replace('assets/', '').replace(/\.(png|jpg|jpeg)$/i, '')
+                }))
+              setExistingAssets(assetFiles)
               
               // Load and start the game in preview
               const sceneName = gameData.mainScene || scenes[0] || 'ticTacToe'
@@ -619,6 +674,16 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
         }
       }
       
+      // Load existing assets from file tree for Design Board
+      const assetFiles = Object.keys(files)
+        .filter(path => path.startsWith('assets/') && (path.endsWith('.png') || path.endsWith('.jpg') || path.endsWith('.jpeg')))
+        .map(path => ({
+          path,
+          url: files[path],
+          name: path.replace('assets/', '').replace(/\.(png|jpg|jpeg)$/i, '')
+        }))
+      setExistingAssets(assetFiles)
+      
       // Refresh file tree to show updated files
       setFileTreeRefresh(prev => prev + 1)
     } catch (error) {
@@ -647,6 +712,8 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
 
     setIsUploading(true)
     try {
+      // Load existing files to get asset URLs after upload
+      const { loadFiles } = await import('../services/projects')
       const { saveFiles } = await import('../services/projects')
       
       // Prepare files for upload
@@ -694,6 +761,17 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
       
       // Refresh file tree
       setFileTreeRefresh(prev => prev + 1)
+      
+      // Reload assets from file tree to show newly uploaded assets
+      const updatedFiles = await loadFiles(gameId)
+      const assetFiles = Object.keys(updatedFiles)
+        .filter(path => path.startsWith('assets/') && (path.endsWith('.png') || path.endsWith('.jpg') || path.endsWith('.jpeg')))
+        .map(path => ({
+          path,
+          url: updatedFiles[path],
+          name: path.replace('assets/', '').replace(/\.(png|jpg|jpeg)$/i, '')
+        }))
+      setExistingAssets(assetFiles)
       
       // Show success message
       alert(`Successfully uploaded ${filesToUpload.length} asset(s) to the assets folder!\n\nNote: For best results, ensure your PNG files have transparent backgrounds.`)
@@ -933,40 +1011,38 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
           </div>
 
           <div className="p-4 border-t border-[#533F31]/20">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (!isLoading && input.trim()) {
-                  handleSend()
-                }
-              }}
-              className="flex gap-2"
-            >
+            <div className="flex gap-2">
               <Textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => {
-                  // Update input state - this handles ALL characters including letters and space
-                  const newValue = e.target.value
-                  setInput(newValue)
-                }}
-                onInput={(e) => {
-                  // Fallback handler to ensure all input is captured
-                  const target = e.target as HTMLTextAreaElement
-                  if (target.value !== input) {
-                    setInput(target.value)
-                  }
+                  // Update input state - this handles ALL characters including letters, space, WASD, etc.
+                  setInput(e.target.value)
                 }}
                 onKeyDown={(e) => {
-                  // Only handle Enter without Shift - prevent default to stop form submission
-                  // All other keys (including all letters, space, numbers, etc.) work normally
+                  // Stop propagation to prevent Phaser game from capturing these keys
+                  // This ensures WASD, spacebar, and other keys work in the textarea
+                  if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'TEXTAREA') {
+                    e.stopPropagation()
+                  }
+                  
+                  // Only handle Enter without Shift - prevent default to stop any form submission
+                  // For ALL other keys (W, A, S, D, Space, letters, numbers, etc.), do NOTHING
+                  // Let the browser handle them normally through onChange
                   if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
                     e.preventDefault()
+                    e.stopPropagation()
                     if (input.trim()) {
                       handleSend()
                     }
                   }
-                  // For all other keys, do nothing - let onChange/onInput handle them
+                  // Explicitly allow all other keys to work normally - no preventDefault() for anything else
+                }}
+                onKeyPress={(e) => {
+                  // Stop propagation for all keypress events to prevent game from capturing them
+                  if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'TEXTAREA') {
+                    e.stopPropagation()
+                  }
                 }}
                 placeholder={initialPrompt || "Add an NPC, create a scene, branch dialogue..."}
                 className="flex-1 min-h-[60px] max-h-[120px]"
@@ -975,10 +1051,18 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
                 spellCheck={false}
                 disabled={isLoading}
               />
-              <Button type="submit" disabled={!input.trim() || isLoading}>
+              <Button 
+                onClick={(e) => {
+                  e.preventDefault()
+                  if (!isLoading && input.trim()) {
+                    handleSend()
+                  }
+                }}
+                disabled={!input.trim() || isLoading}
+              >
                 Send
               </Button>
-            </form>
+            </div>
           </div>
         </div>
         {/* Chat Resize Handle */}
@@ -1022,42 +1106,125 @@ export const Playground = ({ gameId, initialPrompt, onBack }: PlaygroundProps) =
                 PNG files only (up to 10). Transparent backgrounds recommended for best results.
               </p>
             </div>
-            {generatedAssets.length > 0 && !selectedFile ? (
+            {(generatedAssets.length > 0 || existingAssets.length > 0) && !selectedFile ? (
               <div className="space-y-4">
                 <div className="bg-[#F8F1E3] rounded-lg p-4 border border-[#533F31]/20">
                   <h4 className="font-medium text-[#2E2A25] mb-2">
-                    Generated Game Assets ({generatedAssets.length})
+                    Game Assets ({generatedAssets.length + existingAssets.length})
                   </h4>
                   <p className="text-sm text-[#2E2A25]/70 mb-4">
-                    These assets were generated for your game. They're also available in the file tree.
+                    {generatedAssets.length > 0 ? 'Newly generated assets are shown below. ' : ''}
+                    Toggle "Keep" to prevent assets from being replaced when generating new ones.
                   </p>
                   
                   <div className="grid grid-cols-2 gap-4">
-                    {generatedAssets.map((asset, idx) => (
-                      <div key={idx} className="bg-white rounded-lg p-3 border border-[#533F31]/20">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs font-medium text-[#533F31] capitalize">{asset.type}</span>
-                          <span className="text-xs text-[#2E2A25]/60">{asset.name}</span>
+                    {/* Show existing assets first */}
+                    {existingAssets.map((asset, idx) => {
+                      const isKept = keptAssets.has(asset.path)
+                      return (
+                        <div key={`existing-${idx}`} className={`bg-white rounded-lg p-3 border ${isKept ? 'border-[#E9C46A] border-2' : 'border-[#533F31]/20'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-[#533F31]">Asset</span>
+                              <span className="text-xs text-[#2E2A25]/60">{asset.name}</span>
+                            </div>
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isKept}
+                                onChange={(e) => {
+                                  const newKeptAssets = new Set(keptAssets)
+                                  if (e.target.checked) {
+                                    newKeptAssets.add(asset.path)
+                                  } else {
+                                    newKeptAssets.delete(asset.path)
+                                  }
+                                  setKeptAssets(newKeptAssets)
+                                  // Persist to storage
+                                  if (gameId) {
+                                    const storageKey = `keptAssets_${gameId}`
+                                    set(storageKey, Array.from(newKeptAssets)).catch(err => 
+                                      console.error('Failed to save kept assets state:', err)
+                                    )
+                                  }
+                                }}
+                                className="w-4 h-4 text-[#E9C46A] rounded border-[#533F31]/30 focus:ring-[#E9C46A]"
+                              />
+                              <span className="text-xs text-[#2E2A25]/70">Keep</span>
+                            </label>
+                          </div>
+                          {asset.url && (
+                            <img 
+                              src={asset.url} 
+                              alt={asset.name}
+                              className="w-full h-32 object-contain rounded border border-[#533F31]/10"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none'
+                              }}
+                            />
+                          )}
+                          <p className="text-xs text-[#2E2A25]/60 mt-2 truncate">{asset.path}</p>
                         </div>
-                        {asset.url && (
-                          <img 
-                            src={asset.url} 
-                            alt={asset.name}
-                            className="w-full h-32 object-contain rounded border border-[#533F31]/10"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none'
-                            }}
-                          />
-                        )}
-                        <p className="text-xs text-[#2E2A25]/60 mt-2 truncate">{asset.path}</p>
-                      </div>
-                    ))}
+                      )
+                    })}
+                    {/* Show newly generated assets */}
+                    {generatedAssets.map((asset, idx) => {
+                      const isKept = keptAssets.has(asset.path)
+                      return (
+                        <div key={`generated-${idx}`} className={`bg-white rounded-lg p-3 border ${isKept ? 'border-[#E9C46A] border-2' : 'border-[#533F31]/20'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-[#533F31] capitalize">{asset.type}</span>
+                              <span className="text-xs text-[#2E2A25]/60">{asset.name}</span>
+                            </div>
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isKept}
+                                onChange={(e) => {
+                                  const newKeptAssets = new Set(keptAssets)
+                                  if (e.target.checked) {
+                                    newKeptAssets.add(asset.path)
+                                  } else {
+                                    newKeptAssets.delete(asset.path)
+                                  }
+                                  setKeptAssets(newKeptAssets)
+                                  // Persist to storage
+                                  if (gameId) {
+                                    const storageKey = `keptAssets_${gameId}`
+                                    set(storageKey, Array.from(newKeptAssets)).catch(err => 
+                                      console.error('Failed to save kept assets state:', err)
+                                    )
+                                  }
+                                }}
+                                className="w-4 h-4 text-[#E9C46A] rounded border-[#533F31]/30 focus:ring-[#E9C46A]"
+                              />
+                              <span className="text-xs text-[#2E2A25]/70">Keep</span>
+                            </label>
+                          </div>
+                          {asset.url && (
+                            <img 
+                              src={asset.url} 
+                              alt={asset.name}
+                              className="w-full h-32 object-contain rounded border border-[#533F31]/10"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none'
+                              }}
+                            />
+                          )}
+                          <p className="text-xs text-[#2E2A25]/60 mt-2 truncate">{asset.path}</p>
+                        </div>
+                      )
+                    })}
                   </div>
                   
                   <Button
                     variant="outlined"
                     size="sm"
-                    onClick={() => setGeneratedAssets([])}
+                    onClick={() => {
+                      setGeneratedAssets([])
+                      setExistingAssets([])
+                    }}
                     className="mt-4"
                   >
                     Clear Assets View

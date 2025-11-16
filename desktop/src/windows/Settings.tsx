@@ -10,6 +10,8 @@ interface SettingsProps {
 
 export const Settings = ({ onBack, onSave }: SettingsProps) => {
   const [model, setModel] = useState('gpt-5')
+  const [supabaseUrl, setSupabaseUrl] = useState('')
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState('')
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -18,8 +20,15 @@ export const Settings = ({ onBack, onSave }: SettingsProps) => {
   }, [])
 
   const loadSettings = async () => {
+    const defaultSupabaseUrl = 'https://msomzmvhvgsxfxrpvrzp.supabase.co'
+    
     let m = await get<string>('model', 'gpt-5')
+    let url = await get<string>('supabaseUrl', '')
+    let key = await get<string>('supabaseAnonKey', '')
+    
     setModel(m)
+    setSupabaseUrl(url || defaultSupabaseUrl)
+    setSupabaseAnonKey(key || '')
   }
 
   const handleSave = async () => {
@@ -27,6 +36,13 @@ export const Settings = ({ onBack, onSave }: SettingsProps) => {
     setSaved(false)
     try {
       await set('model', model)
+      await set('supabaseUrl', supabaseUrl)
+      await set('supabaseAnonKey', supabaseAnonKey)
+      
+      // Clear the Supabase client cache so it uses new settings
+      const { clearSupabaseClient } = await import('../lib/supabase')
+      clearSupabaseClient()
+      
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
       
@@ -54,6 +70,44 @@ export const Settings = ({ onBack, onSave }: SettingsProps) => {
         </div>
 
         <div className="space-y-6">
+          {/* Supabase Configuration */}
+          <div>
+            <h2 className="font-medium text-lg text-[#2E2A25] mb-4">Supabase Configuration</h2>
+            <p className="text-sm text-[#2E2A25]/70 mb-4">
+              Configure your Supabase project to enable authentication and data storage.
+              Get your keys from: <a href="https://supabase.com/dashboard/project/msomzmvhvgsxfxrpvrzp/settings/api" target="_blank" rel="noopener noreferrer" className="text-[#E9C46A] underline">Supabase Dashboard → Settings → API</a>
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-[#533F31] mb-2">
+                  Supabase URL
+                </label>
+                <input
+                  type="text"
+                  value={supabaseUrl}
+                  onChange={(e) => setSupabaseUrl(e.target.value)}
+                  placeholder="https://your-project.supabase.co"
+                  className="w-full px-3 py-2 rounded-lg bg-[#FBF7EF] border border-[#533F31]/20 text-[#2E2A25]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#533F31] mb-2">
+                  Supabase Anon Key
+                </label>
+                <input
+                  type="password"
+                  value={supabaseAnonKey}
+                  onChange={(e) => setSupabaseAnonKey(e.target.value)}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  className="w-full px-3 py-2 rounded-lg bg-[#FBF7EF] border border-[#533F31]/20 text-[#2E2A25]"
+                />
+                <p className="text-xs text-[#2E2A25]/60 mt-1">
+                  This is your public anon key (safe to use in client apps)
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Model Selection */}
           <div>
             <h2 className="font-medium text-lg text-[#2E2A25] mb-4">AI Model</h2>

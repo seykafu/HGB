@@ -92,6 +92,102 @@ export class PhaserGameRuntime {
         }
       }
       
+      // Remove deprecated Phaser particle APIs that cause errors in Phaser 3.60+
+      // These APIs were removed and will cause "ParticleEmitterManager was removed" errors
+      // Use aggressive multiline matching to catch all variations
+      let particleRemoved = false
+      const originalCode = cleanedCode
+      
+      // Pattern 1: Remove chained calls like "this.add.particles(...).createEmitter(...)" (multiline)
+      cleanedCode = cleanedCode.replace(/this\.add\.particles\([^)]*\)\s*\.createEmitter\([^)]*\)[^;]*;?/gs, () => {
+        particleRemoved = true
+        return '// Removed deprecated particle API call (this.add.particles().createEmitter())'
+      })
+      
+      // Pattern 2: Remove this.add.particles() calls with multiline support
+      // Match: variable = this.add.particles(...) with any content inside parentheses
+      cleanedCode = cleanedCode.replace(/(const|let|var)\s+\w+\s*=\s*this\.add\.particles\([^)]*\)[^;]*;?/gs, () => {
+        particleRemoved = true
+        return '// Removed deprecated this.add.particles() call'
+      })
+      
+      // Pattern 3: Remove standalone this.add.particles() calls (no assignment)
+      // Handle nested parentheses by matching more aggressively
+      cleanedCode = cleanedCode.replace(/this\.add\.particles\([^;)]*(?:\([^)]*\)[^;)]*)*\)[^;]*;?/gs, () => {
+        particleRemoved = true
+        return '// Removed deprecated this.add.particles() call'
+      })
+      
+      // Pattern 3b: Match any line containing this.add.particles
+      cleanedCode = cleanedCode.replace(/[^\n]*this\.add\.particles[^\n]*\n?/gs, () => {
+        particleRemoved = true
+        return '// Removed deprecated this.add.particles() call\n'
+      })
+      
+      // Pattern 4: Remove this.add.particleEmitter() calls
+      cleanedCode = cleanedCode.replace(/(const|let|var)?\s*\w*\s*=\s*this\.add\.particleEmitter\([^)]*\)[^;]*;?/gs, () => {
+        particleRemoved = true
+        return '// Removed deprecated this.add.particleEmitter() call'
+      })
+      
+      // Pattern 5: Remove .createEmitter() calls on any variable (multiline, handles nested parentheses)
+      // This is the most critical one - it catches calls like "particles.createEmitter(...)"
+      // Use a more aggressive pattern that handles nested parentheses by matching until we find a closing paren with semicolon or newline
+      cleanedCode = cleanedCode.replace(/\w+\.createEmitter\([^;)]*(?:\([^)]*\)[^;)]*)*\)[^;]*;?/gs, () => {
+        particleRemoved = true
+        return '// Removed deprecated .createEmitter() call'
+      })
+      
+      // Pattern 5b: Even more aggressive - match any line containing createEmitter
+      cleanedCode = cleanedCode.replace(/[^\n]*\.createEmitter[^\n]*\n?/gs, () => {
+        particleRemoved = true
+        return '// Removed deprecated .createEmitter() call\n'
+      })
+      
+      // Pattern 6: Remove entire lines containing ParticleEmitterManager (multiline)
+      cleanedCode = cleanedCode.replace(/[^\n]*ParticleEmitterManager[^\n]*\n?/gs, () => {
+        particleRemoved = true
+        return '// Removed ParticleEmitterManager reference\n'
+      })
+      
+      // Pattern 7: Remove variable declarations that might reference particles
+      // Match patterns like "const particles = ..." or "let emitter = ..."
+      cleanedCode = cleanedCode.replace(/(const|let|var)\s+\w*[Pp]article\w*\s*=\s*[^;]+;?/gs, () => {
+        particleRemoved = true
+        return '// Removed particle-related variable declaration'
+      })
+      
+      // Pattern 8: Remove any remaining references to .particles or .particleEmitter
+      cleanedCode = cleanedCode.replace(/\.particles\([^)]*\)[^;]*;?/gs, () => {
+        particleRemoved = true
+        return '// Removed .particles() call'
+      })
+      
+      cleanedCode = cleanedCode.replace(/\.particleEmitter\([^)]*\)[^;]*;?/gs, () => {
+        particleRemoved = true
+        return '// Removed .particleEmitter() call'
+      })
+      
+      // Pattern 9: Final catch-all - remove any line containing particle-related keywords
+      const particleKeywords = ['ParticleEmitter', 'createEmitter', 'add.particles', 'particleEmitter']
+      for (const keyword of particleKeywords) {
+        const before = cleanedCode
+        cleanedCode = cleanedCode.replace(new RegExp(`[^\\n]*${keyword.replace('.', '\\.')}[^\\n]*\\n?`, 'gs'), () => {
+          particleRemoved = true
+          return `// Removed line containing ${keyword}\n`
+        })
+      }
+      
+      if (particleRemoved) {
+        console.warn('PhaserRuntime: Removed deprecated particle API calls (ParticleEmitterManager, createEmitter, etc.) that are not supported in Phaser 3.60+')
+        console.warn('PhaserRuntime: If you need visual effects, use this.add.graphics(), this.add.rectangle(), or this.add.circle() instead')
+        // Log a snippet of what was removed for debugging
+        const removedSnippet = originalCode.substring(0, 500).replace(cleanedCode.substring(0, 500), '')
+        if (removedSnippet.length > 0) {
+          console.warn('PhaserRuntime: Removed code snippet:', removedSnippet.substring(0, 200))
+        }
+      }
+      
       // Fix duplicate variable declarations (width/height) in create method
       // This handles cases where old code has duplicate declarations
       const createMethodRegex = /(create\s*\([^)]*\)\s*\{)/

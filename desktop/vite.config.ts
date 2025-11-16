@@ -4,6 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  base: './', // Use relative paths for Electron
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
@@ -22,4 +23,7 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  // Expose environment variables to the client
+  // Variables prefixed with VITE_ are available in the renderer process
+  envPrefix: 'VITE_',
 })

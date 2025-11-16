@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { join, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { request } from 'http'
+import { existsSync } from 'fs'
 import Store from 'electron-store'
 import dotenv from 'dotenv'
 
@@ -80,7 +81,36 @@ function createWindow() {
     }, 1500)
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(join(__dirname, '../index.html'))
+    // In production, index.html is in the same directory as main.js (dist/)
+    // In packaged apps, files are in app.asar or the resources folder
+    let indexPath: string
+    
+    if (app.isPackaged) {
+      // Packaged app: use app.getAppPath() to get the correct base path
+      const appPath = app.getAppPath()
+      indexPath = join(appPath, 'dist', 'index.html')
+      
+      // If that doesn't exist, try resources path
+      if (!existsSync(indexPath)) {
+        indexPath = join(process.resourcesPath, 'app.asar', 'dist', 'index.html')
+      }
+      // Final fallback
+      if (!existsSync(indexPath)) {
+        indexPath = join(process.resourcesPath, 'dist', 'index.html')
+      }
+    } else {
+      // Development build: index.html is in dist/ relative to main.js
+      indexPath = join(__dirname, 'index.html')
+    }
+    
+    console.log('Loading index.html from:', indexPath)
+    console.log('App path:', app.isPackaged ? app.getAppPath() : __dirname)
+    mainWindow.loadFile(indexPath).catch((err) => {
+      console.error('Failed to load index.html:', err)
+      console.error('Tried path:', indexPath)
+      // Final fallback - try same directory
+      mainWindow?.loadFile(join(__dirname, 'index.html'))
+    })
   }
 
   mainWindow.on('closed', () => {

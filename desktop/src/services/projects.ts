@@ -243,7 +243,7 @@ export async function listFilePaths(gameId: string): Promise<string[]> {
   return paths
 }
 
-export async function deleteAssets(gameId: string): Promise<void> {
+export async function deleteAssets(gameId: string, keptAssets?: Set<string>): Promise<void> {
   const supabase = await getSupabaseClient()
   const user = await getUser()
 
@@ -261,22 +261,34 @@ export async function deleteAssets(gameId: string): Promise<void> {
     .eq('game_id', gameId)
     .like('path', 'assets/%')
 
-  // Delete all asset files from database (files in assets/ directory)
+  // Filter out assets that should be kept
+  let pathsToDelete = fileRecords?.map(r => r.path) || []
+  if (keptAssets && keptAssets.size > 0) {
+    pathsToDelete = pathsToDelete.filter(path => !keptAssets.has(path))
+    console.log(`Himalayan Game Builder: Keeping ${keptAssets.size} asset(s), deleting ${pathsToDelete.length} asset(s)`)
+  }
+
+  if (pathsToDelete.length === 0) {
+    console.log('Himalayan Game Builder: No assets to delete (all are marked as keep)')
+    return
+  }
+
+  // Delete asset files from database (only those not marked as keep)
   const { error: deleteError } = await supabase
     .from('game_files')
     .delete()
     .eq('game_id', gameId)
-    .like('path', 'assets/%')
+    .in('path', pathsToDelete)
 
   if (deleteError) {
     console.error('Failed to delete assets:', deleteError)
     throw deleteError
   }
 
-  // Also try to delete from storage if we have file records
-  if (fileRecords && fileRecords.length > 0) {
+  // Also try to delete from storage if we have file records (only those not marked as keep)
+  if (pathsToDelete.length > 0) {
     try {
-      const storagePaths = fileRecords.map(record => `${user.id}/${gameId}/${record.path}`)
+      const storagePaths = pathsToDelete.map(path => `${user.id}/${gameId}/${path}`)
       const { error: storageError } = await supabase.storage
         .from('gamefiles')
         .remove(storagePaths)
@@ -291,7 +303,7 @@ export async function deleteAssets(gameId: string): Promise<void> {
     }
   }
 
-  console.log(`Himalayan Game Builder: Deleted all assets for game ${gameId}`)
+  console.log(`Himalayan Game Builder: Deleted ${pathsToDelete.length} asset(s) for game ${gameId}`)
 }
 
 export async function loadFiles(gameId: string): Promise<Record<string, string>> {
@@ -322,7 +334,18 @@ export async function loadFiles(gameId: string): Promise<Record<string, string>>
       .download(storagePath)
 
     if (downloadError) {
-      console.error(`Failed to load ${record.path}:`, downloadError)
+      // Suppress offline errors - they're expected when internet is disconnected
+      const errorMessage = downloadError.message || downloadError.toString() || ''
+      const isOfflineError = errorMessage.includes('ERR_INTERNET_DISCONNECTED') ||
+                            errorMessage.includes('Failed to fetch') ||
+                            errorMessage.includes('StorageUnknownError') ||
+                            downloadError.name === 'StorageUnknownError'
+      
+      if (!isOfflineError) {
+        // Only log non-offline errors
+        console.error(`Failed to load ${record.path}:`, downloadError)
+      }
+      // Continue to next file regardless - offline errors are expected
       continue
     }
 

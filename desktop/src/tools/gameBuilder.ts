@@ -232,7 +232,17 @@ CRITICAL REQUIREMENTS:
     - DO NOT use TypeScript type assertions like "as any", "as string", etc.
     - DO NOT use TypeScript-specific syntax
     - The code will be executed as plain JavaScript, so use only JavaScript syntax
-12. **CRITICAL ASSET USAGE: If assets are provided in the prompt below, you MUST:**
+12. **CRITICAL: DO NOT use deprecated Phaser APIs - THIS WILL CAUSE ERRORS!**
+    - **NEVER use this.add.particles() or this.add.particleEmitter()** - these are deprecated in Phaser 3.60+ and will cause "ParticleEmitterManager was removed" errors
+    - **NEVER use ParticleEmitterManager, ParticleEmitter, or createEmitter()** - these were completely removed in Phaser 3.60 and will crash the game
+    - **NEVER use any particle system APIs** - they are all deprecated and removed
+    - **If you need visual effects:**
+      - Use this.add.graphics() to draw shapes, circles, or lines
+      - Use this.add.image() or this.add.sprite() for visual elements
+      - Use this.add.rectangle(), this.add.circle(), this.add.line() for simple shapes
+      - DO NOT attempt to use any particle or emitter systems
+    - **Use only modern Phaser 3 APIs that are currently supported in Phaser 3.60+**
+13. **CRITICAL ASSET USAGE: If assets are provided in the prompt below, you MUST:**
     - **IMPORTANT: All assets are STATIC PNG IMAGES (single-frame images), NOT animated spritesheets**
     - Load ALL assets in preload() method using: const gameAssets = this.sys.game.assets || (this.sys.game.config && this.sys.game.config.assets) || {}; const assets = gameAssets || {}; if (assets['asset_name']) { this.load.image('asset_name', assets['asset_name']) }
     - **DO NOT use this.load.spritesheet() or this.load.atlas() - these are static PNG files, not spritesheets**

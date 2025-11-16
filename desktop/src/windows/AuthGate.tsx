@@ -15,6 +15,59 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 
   useEffect(() => {
     checkConfig()
+    
+    // Re-check auth state when window regains focus (debounced and throttled to prevent excessive calls)
+    let focusTimeout: NodeJS.Timeout | null = null
+    let lastFocusCheck = 0
+    const handleFocus = async () => {
+      const now = Date.now()
+      // Throttle focus checks to at most once every 5 seconds
+      if (now - lastFocusCheck < 5000) {
+        return
+      }
+      
+      // Debounce focus events to prevent excessive calls
+      if (focusTimeout) {
+        clearTimeout(focusTimeout)
+      }
+      focusTimeout = setTimeout(async () => {
+        lastFocusCheck = Date.now()
+        try {
+          const currentUser = await getUser()
+          setUser((prevUser) => {
+            // Only update if user actually changed or was lost
+            if (currentUser && !prevUser) {
+              // User exists but state was lost, restore it
+              console.log('🔄 Restoring user session after window focus')
+              return currentUser
+            } else if (currentUser?.id !== prevUser?.id) {
+              // User changed, update state
+              return currentUser
+            }
+            // No change needed - return previous to prevent re-render
+            return prevUser
+          })
+        } catch (error) {
+          // Silently fail - user might not be logged in
+        }
+      }, 1000) // Wait 1 second before checking
+    }
+    
+    window.addEventListener('focus', handleFocus, { passive: true })
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        handleFocus()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange, { passive: true })
+    
+    return () => {
+      if (focusTimeout) {
+        clearTimeout(focusTimeout)
+      }
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   const checkConfig = async () => {
@@ -50,8 +103,22 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 
       // Listen for auth changes
       let subscription: any = null
-      onAuthStateChange((user) => {
-        setUser(user)
+      onAuthStateChange((newUser) => {
+        // Use functional update to avoid stale closure issues
+        setUser((prevUser) => {
+          // Only update if user actually changed (avoid unnecessary re-renders)
+          const prevId = prevUser?.id
+          const newId = newUser?.id
+          if (prevId !== newId) {
+            // Only log significant changes
+            if (newUser || prevUser) {
+              console.log('👤 User state changed:', newUser ? `User ${newId}` : 'Logged out')
+            }
+            return newUser
+          }
+          // No change needed, return previous state to prevent re-render
+          return prevUser
+        })
       }).then((result) => {
         subscription = result.subscription
       })
@@ -73,6 +140,8 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 
   const handleSettingsSaved = async () => {
     setShowSettings(false)
+    // Reload config after settings are saved
+    await checkConfig()
   }
 
   if (loading) {
